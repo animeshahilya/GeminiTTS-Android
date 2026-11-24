@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Google Gemini TTS</string>
+    <string name="tts_service_label">Google Gemini TTS (On-Device NPU)</string>
+</resources>
