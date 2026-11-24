@@ -2,7 +2,6 @@ package com.example.genaittsdemo.audio
 
 import android.media.AudioFormat
 import android.speech.tts.SynthesisCallback
-import android.speech.tts.TextToSpeech
 import android.util.Log
 import java.io.InterruptedIOException
 import kotlin.math.abs
@@ -170,10 +169,8 @@ class PcmProcessor(
             while (sent < srcLength) {
                 checkCancelled()
                 val chunk = minOf(outputBuffer.size, srcLength - sent)
-                val status = callback.audioAvailable(source, srcOffset + sent, chunk)
-                if (status != TextToSpeech.SUCCESS) {
-                    checkCancelled()
-                }
+                callback.audioAvailable(source, srcOffset + sent, chunk)
+                checkCancelled()
                 sent += chunk
                 totalBytesProcessed += chunk
             }
@@ -188,10 +185,8 @@ class PcmProcessor(
             checkCancelled()
             val read = s.readBytesFromStream(outputBuffer, outputBuffer.size)
             if (read > 0) {
-                val status = callback.audioAvailable(outputBuffer, 0, read)
-                if (status != TextToSpeech.SUCCESS) {
-                    checkCancelled()
-                }
+                callback.audioAvailable(outputBuffer, 0, read)
+                checkCancelled()
                 totalBytesProcessed += read
             } else {
                 break

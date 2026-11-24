@@ -140,17 +140,14 @@ class GenAiTtsService : TextToSpeechService() {
 
     override fun onIsValidVoiceName(voiceName: String?): Int {
         if (voiceName == null) return TextToSpeech.ERROR
-        if (voiceName.contains("gemini", ignoreCase = true) ||
-            voiceName.contains("genai", ignoreCase = true) ||
-            voiceName.contains("en", ignoreCase = true) ||
-            GeminiVoiceCatalog.findById(voiceName) != null ||
+        if (GeminiVoiceCatalog.findById(voiceName) != null ||
             GeminiVoiceCatalog.findByName(voiceName) != null) {
             return TextToSpeech.SUCCESS
         }
         return if (supportedVoices.any { it.name.equals(voiceName, ignoreCase = true) }) {
             TextToSpeech.SUCCESS
         } else {
-            TextToSpeech.SUCCESS
+            TextToSpeech.ERROR
         }
     }
 
@@ -172,6 +169,7 @@ class GenAiTtsService : TextToSpeechService() {
             ?: GeminiVoiceCatalog.getDefaultVoiceForGender(preferences.preferredGender)
         return supportedVoices.firstOrNull { it.name.contains(preferred.name, ignoreCase = true) }?.name
             ?: supportedVoices.firstOrNull { it.gender.name.equals(preferred.gender, ignoreCase = true) }?.name
+            ?: supportedVoices.firstOrNull()?.name
             ?: preferred.id
     }
 

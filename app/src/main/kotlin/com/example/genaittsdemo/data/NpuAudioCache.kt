@@ -4,8 +4,11 @@ import android.content.Context
 import android.speech.tts.SynthesisCallback
 import android.util.Log
 import android.util.LruCache
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -34,6 +37,8 @@ data class CacheStats(
  * while offloading repetitive inference workloads from the device NPU.
  */
 class NpuAudioCache(private val context: Context) {
+
+    private var ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     companion object {
         private const val TAG = "NpuAudioCache"
@@ -139,19 +144,21 @@ class NpuAudioCache(private val context: Context) {
     fun put(cacheKey: String, audioData: ByteArray) {
         if (!isCacheEnabled || audioData.isEmpty()) return
 
-        // Put in memory
+        // Put in memory (hot path stays synchronous)
         memoryCache.put(cacheKey, audioData)
         totalSynthesizedBytes.addAndGet(audioData.size.toLong())
 
-        // Save to disk asynchronously
-        try {
-            val file = File(cacheDir, "$cacheKey.pcm")
-            FileOutputStream(file).use { fos ->
-                fos.write(audioData)
+        // Save to disk on an IO dispatcher so the TTS binder thread never blocks
+        ioScope.launch {
+            try {
+                val file = File(cacheDir, "$cacheKey.pcm")
+                FileOutputStream(file).use { fos ->
+                    fos.write(audioData)
+                }
+                trimDiskCacheIfNeeded()
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to write disk cache for $cacheKey", e)
             }
-            trimDiskCacheIfNeeded()
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to write disk cache for $cacheKey", e)
         }
     }
 
@@ -205,6 +212,8 @@ class NpuAudioCache(private val context: Context) {
     }
 
     fun clear() {
+        ioScope.cancel()
+        ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         memoryCache.evictAll()
         try {
             cacheDir.listFiles()?.forEach { it.delete() }

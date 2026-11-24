@@ -906,7 +906,7 @@ fun DictionaryTab(
                 Text(text = "Punctuation Verbosity:", style = MaterialTheme.typography.labelMedium)
                 Spacer(modifier = Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PunctuationMode.values().forEach { mode ->
+                    PunctuationMode.entries.forEach { mode ->
                         FilterChip(
                             selected = customState.punctuationMode == mode,
                             onClick = { viewModel.setPunctuationMode(mode) },

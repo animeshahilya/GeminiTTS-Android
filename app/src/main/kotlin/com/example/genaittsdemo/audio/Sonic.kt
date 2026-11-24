@@ -168,6 +168,9 @@ class Sonic(
         var maxDiffVal = 0
 
         for (period in minPeriod..maxPeriod) {
+            // Never read past the valid input: the longest candidate reads
+            // [startSample, startSample + 2 * period).
+            if (startSample + period * 2 > samples.size) break
             var diff = 0
             for (i in 0 until period) {
                 val s1 = samples[startSample + i].toInt()
@@ -255,6 +258,7 @@ class Sonic(
         rampUp: ShortArray,
         rampUpPos: Int
     ) {
+        if (numSamples <= 0) return
         for (ch in 0 until numChannels) {
             var o = outPos * numChannels + ch
             var u = rampUpPos * numChannels + ch
@@ -279,7 +283,7 @@ class Sonic(
         if (speed < 2.0f) {
             newSamples = (period / (speed - 1.0f)).toInt()
         } else {
-            remainingInputToCopy = ((period * (2.0f - speed)) / (speed - 1.0f)).toInt()
+            remainingInputToCopy = maxOf(0, ((period * (2.0f - speed)) / (speed - 1.0f)).toInt())
             newSamples = period
         }
         enlargeOutputBufferIfNeeded(newSamples)
@@ -305,7 +309,7 @@ class Sonic(
         if (speed < 0.5f) {
             newSamples = ((period * speed) / (1.0f - speed)).toInt()
         } else {
-            remainingInputToCopy = ((period * (2.0f * speed - 1.0f)) / (1.0f - speed)).toInt()
+            remainingInputToCopy = maxOf(0, ((period * (2.0f * speed - 1.0f)) / (1.0f - speed)).toInt())
             newSamples = period
         }
         enlargeOutputBufferIfNeeded(period + newSamples)
@@ -342,10 +346,16 @@ class Sonic(
                 position += copyInputToOutput(position)
             } else {
                 val period = findPitchPeriod(inputBuffer, position, true)
-                position += if (speed > 1.0f) {
-                    period + skipPitchPeriod(inputBuffer, position, speed, period)
+                if (period <= 0) {
+                    // No usable pitch period: emit one sample to guarantee progress.
+                    copyToOutput(inputBuffer, position, 1)
+                    position += 1
                 } else {
-                    insertPitchPeriod(inputBuffer, position, speed, period)
+                    position += if (speed > 1.0f) {
+                        period + skipPitchPeriod(inputBuffer, position, speed, period)
+                    } else {
+                        insertPitchPeriod(inputBuffer, position, speed, period)
+                    }
                 }
             }
         } while (position + maxRequired <= numInputSamples)
