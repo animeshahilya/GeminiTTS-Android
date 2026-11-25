@@ -1,24 +1,45 @@
+import java.util.Properties
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.compose.compiler)
-  alias(libs.plugins.kotlin.serialization)
+}
+
+// Release signing: a gitignored keystore.properties (storeFile, storePassword, keyAlias, keyPassword)
+// at the project root. Without it, release builds are left unsigned and everything else still works.
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+  if (keystorePropertiesFile.exists()) keystorePropertiesFile.inputStream().use { load(it) }
 }
 
 android {
-  namespace = "com.example.genaittsdemo"
+  namespace = "com.animeshahilya.geminitts"
   compileSdk = 36
   defaultConfig {
-    applicationId = "com.example.genaittsdemo"
+    applicationId = "com.animeshahilya.geminitts"
     minSdk = 26
     targetSdk = 36
     versionCode = 1
     versionName = "1.0"
   }
 
+  signingConfigs {
+    if (keystorePropertiesFile.exists()) {
+      create("release") {
+        storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+        storePassword = keystoreProperties.getProperty("storePassword")
+        keyAlias = keystoreProperties.getProperty("keyAlias")
+        keyPassword = keystoreProperties.getProperty("keyPassword")
+      }
+    }
+  }
+
   buildTypes {
     release {
-      isMinifyEnabled = false
+      isMinifyEnabled = true
+      isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+      if (keystorePropertiesFile.exists()) signingConfig = signingConfigs.getByName("release")
     }
   }
   compileOptions {
@@ -27,11 +48,11 @@ android {
   }
   buildFeatures {
     compose = true
-    aidl = false
-    buildConfig = false
-    shaders = false
   }
-
+  testOptions {
+    // PcmProcessor logs through android.util.Log; let JVM tests ignore it.
+    unitTests.isReturnDefaultValues = true
+  }
   packaging {
     resources {
       excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -46,43 +67,18 @@ kotlin {
 dependencies {
   val composeBom = platform(libs.androidx.compose.bom)
   implementation(composeBom)
-  androidTestImplementation(composeBom)
 
-  // Core Android dependencies
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.lifecycle.runtime.ktx)
-  implementation(libs.androidx.activity.compose)
-
-  // Arch Components
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.viewmodel.compose)
-
-  // Compose
+  implementation(libs.androidx.activity.compose)
   implementation(libs.androidx.compose.ui)
-  implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.compose.material3)
-  implementation("androidx.compose.material:material-icons-extended")
-
-  // On-Device GenAI Text-to-Speech
-  implementation("com.google.mlkit:genai-text-to-speech:1.0.0-alpha1")
-  // Tooling
   debugImplementation(libs.androidx.compose.ui.tooling)
-  // Instrumented tests
-  androidTestImplementation(libs.androidx.compose.ui.test.junit4)
-  debugImplementation(libs.androidx.compose.ui.test.manifest)
 
-  // Local tests: jUnit, coroutines, Android runner
+  // Lists and downloads the on-device GenAI voices.
+  implementation("com.google.mlkit:genai-text-to-speech:1.0.0-alpha1")
+
   testImplementation(libs.junit)
-  testImplementation(libs.kotlinx.coroutines.test)
-
-  // Instrumented tests: jUnit rules and runners
-  androidTestImplementation(libs.androidx.test.core)
-  androidTestImplementation(libs.androidx.test.ext.junit)
-  androidTestImplementation(libs.androidx.test.runner)
-  androidTestImplementation(libs.androidx.test.espresso.core)
-
-  // Navigation
-  implementation(libs.androidx.navigation3.ui)
-  implementation(libs.androidx.navigation3.runtime)
-  implementation(libs.androidx.lifecycle.viewmodel.navigation3)
 }

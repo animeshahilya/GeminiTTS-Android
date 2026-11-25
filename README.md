@@ -1,179 +1,78 @@
-# GeminiTTS-Android 🎙️⚡
+# Gemini TTS
 
-> **High-Performance On-Device Neural Text-to-Speech Engine & Accessibility Workbench for Android**
+An Android text-to-speech engine for TalkBack and any other app that speaks. It uses the on-device
+GenAI voices that Google's Speech Services provide on recent flagship phones, so speech is made on
+the phone.
 
-[![Platform](https://img.shields.io/badge/Platform-Android%2014%2B%20%28API%2034%2B%29-blue.svg)](https://developer.android.com)
-[![Hardware NPU](https://img.shields.io/badge/Hardware-Snapdragon%208%20Elite%20%7C%20Google%20Tensor%20G3-orange.svg)](#hardware-support)
-[![Language](https://img.shields.io/badge/Language-Kotlin%20%28Jetpack%20Compose%29-purple.svg)](https://kotlinlang.org)
-[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
-[![Accessibility](https://img.shields.io/badge/Accessibility-TalkBack%20Optimized-teal.svg)](#accessibility-features)
+## What it does
 
-**GeminiTTS-Android** is an independent, production-grade Android system `TextToSpeechService` and accessibility research workbench. It provides sub-100ms latency on-device neural speech synthesis powered by modern mobile NPUs/TPUs (Qualcomm Snapdragon 8 Elite Hexagon NPU & Google Tensor G3 TPU), integrated with Android Dynamic Performance Framework (ADPF) CPU governor scheduling, real-time pitch-preserving Sonic DSP time-stretching (0.5x – 3.5x), lock-free sub-millisecond cancellation, and a two-tier in-memory/disk audio cache.
+- **System TTS engine.** Pick it in Settings → Accessibility → Text-to-speech output, and TalkBack,
+  readers and other apps speak with it.
+- **Your speed and pitch.** GenAI voices only speak at one speed. Gemini TTS speeds them up or
+  changes the pitch to match what the app asks for (Sonic time-stretching), from 0.25× to 4×.
+- **Reading styles.** Standard, Audiobook, Calm, News, Quick, or your own Custom style. A style adjusts
+  speed and pitch on top of what the app asks for, and adds pauses after sentences and paragraphs. It
+  applies to every app, voice and language.
+- **Saved phrases.** Phrases you hear often ("Double-tap to activate", button names) are kept at
+  normal speed and replay instantly at any speed. Can be turned off; uses up to 64 MB.
+- **Pronunciation dictionary.** Change how words are read. Whole words only, with optional regular
+  expressions.
+- **Works before the first unlock.** Settings and saved phrases live in device-protected storage.
+- **Many languages.** Every language Google offers the GenAI voices in (21, including Hindi, German,
+  French, Spanish, Japanese and Arabic). You pick one voice and it is used in every language. Each
+  language downloads on its own from the Languages tab, for its native pronunciation.
+- **Falls back gracefully.** The GenAI voices are multilingual, so a language that isn't downloaded is
+  read by your voice in a language that is. Google's standard voice is only used when no GenAI voice
+  is downloaded at all.
+- **Fast first sentence.** The voice is loaded in the background when the engine starts, so the first
+  thing read doesn't wait for it.
 
----
+## How it works
 
-## 🏗️ Architecture & Pipeline
+ML Kit's `genai-text-to-speech` is used only to list and download the GenAI voices. Those voices are
+ordinary voices of Google's TTS engine (`com.google.android.tts`), so ML Kit's own `synthesize()`
+calls `speak()` and plays the audio itself. A TTS service built on it would play every utterance
+twice, once at 1× speed.
 
-```mermaid
-flowchart TD
-    A["TalkBack / Accessibility / System Event"] --> B["AccessibilitySpanParser (TtsSpan)"]
-    B --> C["TtsCustomizationPreferences (Acronyms & Dictionaries)"]
-    C --> D["PerformanceScope (ADPF Hint + WakeLock + ProcTasks)"]
-    D --> E{"NpuAudioCache Lookup (Raw 24kHz PCM)"}
-    E -- "Cache Hit (0-2 ms)" --> F["PcmProcessor (Sonic DSP)"]
-    E -- "Cache Miss" --> G["Line-Break & Sentence Pipelining"]
-    G --> H["Google Gemini GenAI NPU Engine / High-Fidelity Fallback"]
-    H --> I["Stream Accumulator + NpuAudioCache Put"]
-    H --> F
-    F --> J{"Startup Reserve (250 ms)"}
-    J -- "Speed > 1.0x" --> K["Pre-buffer 250ms to prevent click/underrun"]
-    J -- "Normal" --> L["Sonic Time-Scale Modification"]
-    K --> L
-    L --> M["Android SynthesisCallback (Urgent Audio -19)"]
+Instead, the service binds Google's engine directly, picks the matching voice, and calls
+`synthesizeToFile()` into `/dev/null`. The audio arrives through `onAudioAvailable`, as fast as
+it is made, without playing. It then goes through Sonic to the caller's `SynthesisCallback`.
+
+```
+TalkBack → GenAiTtsService → dictionary → saved phrase?
+                                   ├─ yes → Sonic → SynthesisCallback
+                                   └─ no  → Google TTS (GenAI voice) → Sonic → SynthesisCallback
 ```
 
----
+TtsSpans (phone numbers, dates, money) are passed through to Google's engine, which reads them
+natively.
 
-## ⚡ Key Architectural Innovations
+## Requirements
 
-### 1. 🚀 ADPF & Energy-Aware Scheduler (EAS) Frequency Boosting
-* **ADPF (`android.os.PerformanceHintManager`) on API 31+**: TalkBack utterances occur in brief, rapid bursts (20ms to 200ms). Standard reactive CPU governors (schedutil/EAS) do not scale up clock frequencies fast enough for short bursts, introducing initial audio stutter. `PerformanceScope` creates a hint session with 50ms chunk targets and reports clamped execution times directly to the PowerHAL governor (`powerhal-libperfmgr`), immediately boosting scheduling onto Cortex-X4 prime and A720 performance cores without outlier rejections.
-* **`ProcTasks` Native Thread Priority Elevation**: Scans `/proc/self/task` to discover all active Java and native C++ worker threads (including ML Kit on-device TPU/NPU inference threads) and elevates their scheduling priority to `Process.THREAD_PRIORITY_URGENT_AUDIO` (`nice -19`).
-* **Screen-Off WakeLock Guard (`PowerManager.PARTIAL_WAKE_LOCK`)**: Guarantees Android never throttles or suspends background speech synthesis threads when the device screen turns off or locks during screen reading.
+- Android 8.0 or newer (API 26).
+- Google Speech Services, and a phone where ML Kit offers on-device GenAI voices. Google lists Pixel 8
+  to 11, Galaxy S25 and S26, and Galaxy Z Fold8 and Z Flip8. Elsewhere the engine still works with the
+  standard Google voices.
+- Tested on a Galaxy S25 Ultra (Android 17). There Google currently runs these voices on the CPU,
+  about four times faster than real time; speech starts about 0.4 s after a request, and saved phrases
+  start at once.
 
-### 2. 🎵 Pure-Kotlin Bill Cox Sonic DSP Algorithm
-* **The Problem**: On-device neural speech models natively output audio at a fixed 1.0x rate. However, TalkBack screen reader users commonly listen at **1.5x to 3.0x+** speeds.
-* **The Solution**: An ultra-fast, pure-Kotlin implementation of Bill Cox's canonical Sonic PICOLA/AMDF algorithm. Modifies playback speed (0.5x to 3.5x) and pitch in real-time with sub-millisecond overhead, preserving vocal naturalness without pitch distortion ("chipmunk effect").
-* **Cache Replay Synergy**: Raw 24 kHz neural audio is cached once; cached utterances can then be replayed at *any* dynamic user-selected speech rate (1.25x, 1.5x, 2.0x, 2.5x) with zero re-inference.
+## Building
 
-### 3. 🛡️ 250ms Startup Reserve Buffering & Frame Alignment
-* When `speechRate > 1.0f`, audio frames are consumed faster than the NPU generates them, causing crackles, pops, or buffer underruns. `PcmProcessor` pre-buffers up to 250 ms before streaming out frames.
-* **Short Utterance Flush**: On `stop()`, any unplayed audio remaining in the reserve buffer (e.g. for short words like "OK", "Back", or "Done") is flushed to the output callback so no token is ever clipped.
-* **Strict Frame Alignment**: All buffers are aligned to exact multiples of `channelCount * 2` bytes (16-bit PCM mono = 2 bytes/frame) with boundary guards to prevent index out of bounds exceptions.
-
-### 4. ⚡ Lock-Free AtomicLong Generation Cancellation
-* TalkBack users swipe rapidly across UI elements, issuing dozens of speech abort requests per minute.
-* Instead of blocking threads or relying solely on thread interrupts (which risk deadlock on binder IPC calls), `GenAiTtsService` uses an `AtomicLong cancellation` counter.
-* Calling `onStop()` increments the generation count and releases active fallback latches, aborting audio synthesis in **under 1 millisecond**.
-
-### 5. ♿ Comprehensive AccessibilitySpanParser (`TtsSpan`)
-Extracts and phonetically expands Android accessibility `TtsSpan` metadata:
-* **Telephone Numbers**: `"+1-800-555-0199 ext 42"` ➔ `"plus 1, 8 0 0, 5 5 5, 0 1 9 9, extension 4 2"`
-* **Currencies**: `"$49.99"` ➔ `"49 dollars and 99 cents"` | `"€15.50"` ➔ `"15 euros and 50 cents"`
-* **Dates & Times**: Full natural expansion of weekdays, month names, day ordinals, and 12-hour AM/PM times.
-* **Units of Measure**: `"65 km/h"` ➔ `"65 kilometers per hour"`, `"150 MB"` ➔ `"150 megabytes"`, `"25°C"` ➔ `"25 degrees Celsius"`.
-* **Fractions**: `"1 1/2"` ➔ `"1 and 1 half"`.
-* **Verbatim & Verification Codes**: Spaces out digits (`"4 9 2 0 1 8"`).
-* **Electronic / URLs**: Normalizes domain dots (`"dot"`), `@` (`"at"`), and slashes (`"slash"`).
-
-### 6. 🎭 Official Google Gemini Voice Catalog
-Pre-configured with official voice profiles matching Google's documented voice library:
-* **Gemini Studio (Mythological Series)**:
-  * **Aoede** (`♀` Female): *Breezy & Natural* — Google's flagship voice for reading and narration.
-  * **Kore** (`♀` Female): *Firm & Confident* — Direct, articulate voice for screen reading and guidance.
-  * **Puck** (`♂` Male): *Upbeat & Lively* — Energetic, friendly conversational tone.
-  * **Charon** (`♂` Male): *Informative & Calm* — Deliberate, deeper tone for news and documentation.
-  * **Fenrir** (`♂` Male): *Passionate & Dynamic* — Expressive delivery with rich acoustic dynamics.
-  * **Leda** (`♀` Female): *Youthful & Energetic* — Vibrant, modern conversational tone.
-  * **Orus** (`♂` Male): *Calm & Authoritative* — Steady, warm baritone voice.
-  * **Zephyr** (`♀` Female): *Bright & Clear* — High clarity and crisp articulation.
-* **Gemini Live (Celestial Series)**:
-  * **Nova**, **Orion**, **Capella**, **Pegasus**, **Lyra**, **Ursa**, **Dipper**, **Eclipse**, **Orbit**, **Vega**.
-
-### 7. 💾 Two-Tier NPU Audio Cache & Memory Trimming
-* **Tier 1 (Memory LRU)**: 16 MB in-memory cache serving repeated TalkBack phrases in **0–1 ms**.
-* **Tier 2 (Disk Storage)**: 64 MB persistent disk cache with automated LRU cleanup.
-* **OS Memory Pressure Hooks**: `onTrimMemory()` and `onLowMemory()` automatically purge in-memory caches when device RAM is constrained, shielding the TTS service from the low-memory killer (LMK).
-
-### 8. 🤝 Full AOSP System Settings Handshake
-* Implements `ACTION_CHECK_TTS_DATA` and `ACTION_GET_SAMPLE_TEXT` via `TtsDataActivity` with ISO-3 locales (`eng-USA`, `eng-IND`, `eng-GBR`).
-* Registered for `CONFIGURE_ENGINE` and `INSTALL_TTS_DATA`, connecting the system settings gear icon directly to the in-app configuration workbench.
-* Fully `directBootAware="true"`, ensuring screen reading is functional before device unlock.
-
----
-
-## 📱 Hardware Verification
-
-Tested and validated on a physical **Google Pixel 8** (`39051FDJH001P7`):
-* **OS**: Android 17 (Platform `zuma`)
-* **SoC / NPU**: Google Tensor G3 TPU (Titan M2 security)
-* **ADPF Governor**: `powerhal-libperfmgr` (0 outlier warnings logged)
-* **Thread Scheduling**: Elevated to `nice -19` (`URGENT_AUDIO`)
-* **First-Play Synthesis**: 157,228 bytes 16-bit PCM synthesized & cached
-* **Second-Play Cache Hit**: **0 ms instant playback** via Sonic DSP (`Cache HIT (Memory) for key: 5747659d`)
-
----
-
-## 🛠️ Building & Installation
-
-### Prerequisites
-* Android Studio Ladybug / Meerkat or Android SDK command-line tools
-* JDK 17 or higher
-* Android device or emulator running Android 14+ (API 34+)
-
-### Build via Gradle
 ```bash
-# Clone the repository
-git clone https://github.com/animeshahilya/GeminiTTS-Android.git
-cd GeminiTTS-Android
-
-# Compile debug APK
-./gradlew assembleDebug
-
-# Install directly to connected device
-./gradlew installDebug
+./gradlew testDebugUnitTest assembleDebug
+./gradlew assembleRelease   # signed when keystore.properties is present
 ```
 
-### Enabling as Preferred TTS Engine
-1. On your Android device, navigate to **Settings** ➔ **Accessibility** ➔ **Text-to-speech output** (or run `adb shell am start -a com.android.settings.TTS_SETTINGS`).
-2. Tap **Preferred engine** and select **Google Gemini TTS (On-Device NPU)**.
-3. Tap **OK** on the system confirmation dialog.
-4. Tap the **Play** button to verify instant on-device synthesis.
-5. Tap the **Settings gear icon** next to the engine to open the customization workbench.
+Release signing reads a gitignored `keystore.properties` at the project root (`storeFile`,
+`storePassword`, `keyAlias`, `keyPassword`). Without it, the release APK is unsigned.
 
----
+## Not a Google product
 
-## ⚖️ Legal Disclaimer, Trademarks & Fair Use
+This is an independent project. It isn't made, endorsed or supported by Google. "Google", "Gemini",
+"Android" and "TalkBack" are trademarks of Google LLC. No model files are included; voices are
+downloaded by Google's Speech Services on the phone.
 
-> [!IMPORTANT]
-> **Please read this disclaimer carefully before using, building, or contributing to this project.**
+## License
 
-1. **Independent Open-Source Research Project**:
-   This repository is an independent open-source research and accessibility development project created to explore low-latency, on-device neural speech synthesis, energy-aware CPU governor optimization, and screen-reader accessibility on Android. It is **not** an official Google product and is **not** sponsored, endorsed, affiliated with, or supported by Google LLC, Alphabet Inc., Qualcomm Technologies, Inc., or Samsung Electronics.
-
-2. **Trademark Notice**:
-   * "Google", "Gemini", "Android", "Google Pixel", "Tensor", "TalkBack", and "Google Play" are trademarks or registered trademarks of Google LLC.
-   * "Snapdragon" and "Hexagon" are trademarks or registered trademarks of Qualcomm Technologies, Inc.
-   * All other trademarks, trade names, and logos cited herein are the property of their respective owners.
-   * Their use in this repository, documentation, or code is purely for nominative, descriptive identification of hardware targets, software compatibility, and public API interfaces under fair use.
-
-3. **Clean-Room Implementation & No Proprietary Assets**:
-   * All source code in this repository is original Kotlin/Java code written against standard, publicly documented Android Open Source Project (AOSP) APIs (`android.speech.tts.TextToSpeechService`, `android.os.PerformanceHintManager`, `android.text.style.TtsSpan`) and public Google ML Kit client SDK interfaces.
-   * **No proprietary neural network model weights, proprietary binary models, proprietary firmware blobs, or extracted closed-source APK assets are hosted, bundled, or distributed in this repository.**
-   * Any model data utilized at runtime is acquired directly by the user's device through standard public on-device Google Play Services / ML Kit dynamic model distribution mechanisms.
-   * The Sonic DSP time-stretching algorithm is an independent, clean-room implementation of Bill Cox's open-source Sonic algorithm.
-
-4. **Accessibility & Fair Use**:
-   * This project is developed to advance assistive technology and digital accessibility for blind and low-vision users who rely on the Android TalkBack screen reader.
-
----
-
-## 📄 License
-
-This project is licensed under the **Apache License, Version 2.0**. See the [LICENSE](LICENSE) file for full details.
-
-```
-Copyright 2026 Animesh Ahilya and contributors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-```
+Apache License 2.0. See [LICENSE](LICENSE).

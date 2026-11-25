@@ -4,44 +4,41 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <queries>
+        <!-- To find Google Speech Services (or another engine) to make the audio. -->
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
-        <package android:name="com.google.android.tts" />
-        <package android:name="com.samsung.SMT" />
     </queries>
 
     <application
         android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:windowSoftInputMode="adjustResize"
-        android:theme="@style/Theme.GenAiTTSDemo">
+        android:theme="@style/Theme.GeminiTts">
 
-        <!-- Main Configuration Activity & Settings Handshake -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop">
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- System Settings Gear Icon Handshake -->
             <intent-filter>
                 <action android:name="android.speech.tts.engine.CONFIGURE_ENGINE" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
-            <!-- Install Voice Data Action -->
             <intent-filter>
                 <action android:name="android.speech.tts.engine.INSTALL_TTS_DATA" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
 
-        <!-- Standard Android TTS Data & Sample Text Handshake Activity -->
         <activity
             android:name=".TtsDataActivity"
             android:exported="true"
@@ -54,7 +51,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Core On-Device GenAI TTS Service -->
         <service
             android:name=".service.GenAiTtsService"
             android:label="@string/tts_service_label"
