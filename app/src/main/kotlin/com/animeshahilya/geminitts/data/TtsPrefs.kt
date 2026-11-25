@@ -1,6 +1,7 @@
 package com.animeshahilya.geminitts.data
 
 import android.content.Context
+import androidx.core.content.edit
 import java.util.Locale
 
 /**
@@ -18,15 +19,15 @@ class TtsPrefs(context: Context) {
     var voiceId: String?
         // Older versions stored a full name ("en-us-x-star02"); voiceId() reduces either form.
         get() = prefs.getString(KEY_VOICE, null)?.let(::voiceId)
-        set(value) = prefs.edit().putString(KEY_VOICE, value).apply()
+        set(value) = prefs.edit { putString(KEY_VOICE, value) }
 
     var cacheEnabled: Boolean
         get() = prefs.getBoolean(KEY_CACHE, true)
-        set(value) = prefs.edit().putBoolean(KEY_CACHE, value).apply()
+        set(value) = prefs.edit { putBoolean(KEY_CACHE, value) }
 
     var styleId: String
         get() = prefs.getString(KEY_STYLE, null) ?: ReadingStyle.STANDARD
-        set(value) = prefs.edit().putString(KEY_STYLE, value).apply()
+        set(value) = prefs.edit { putString(KEY_STYLE, value) }
 
     /** The values behind the Custom style; start as Audiobook's so there is something to adjust. */
     var customStyle: ReadingStyle
@@ -39,12 +40,12 @@ class TtsPrefs(context: Context) {
                 prefs.getInt(KEY_CUSTOM_PARAGRAPH, base.paragraphPauseMs)
             )
         }
-        set(value) = prefs.edit()
-            .putFloat(KEY_CUSTOM_SPEED, value.speed)
-            .putFloat(KEY_CUSTOM_PITCH, value.pitch)
-            .putInt(KEY_CUSTOM_SENTENCE, value.sentencePauseMs)
-            .putInt(KEY_CUSTOM_PARAGRAPH, value.paragraphPauseMs)
-            .apply()
+        set(value) = prefs.edit {
+            putFloat(KEY_CUSTOM_SPEED, value.speed)
+            putFloat(KEY_CUSTOM_PITCH, value.pitch)
+            putInt(KEY_CUSTOM_SENTENCE, value.sentencePauseMs)
+            putInt(KEY_CUSTOM_PARAGRAPH, value.paragraphPauseMs)
+        }
 
     /** The style in use, for every app, voice and language. */
     fun style(): ReadingStyle = styleId.let { id ->
@@ -58,9 +59,9 @@ class TtsPrefs(context: Context) {
             parsedVoices?.let { (key, list) -> if (key == raw) return list }
             return parseVoices(raw).also { parsedVoices = raw to it }
         }
-        set(value) = prefs.edit()
-            .putString(KEY_VOICES, value.joinToString("\n") { "${it.name}|${it.locale.toLanguageTag()}|${it.gender}" })
-            .apply()
+        set(value) = prefs.edit {
+            putString(KEY_VOICES, value.joinToString("\n") { "${it.name}|${it.locale.toLanguageTag()}|${it.gender}" })
+        }
 
     /** The voice for a caller's language (ISO3 codes, as in a SynthesisRequest). */
     fun voiceFor(lang: String?, country: String?): VoiceEntry? = pickVoice(voices, voiceId, lang, country)
@@ -81,9 +82,9 @@ class TtsPrefs(context: Context) {
 
     var rules: List<DictionaryRule>
         get() = parseRules(prefs.getString(KEY_RULES, null).orEmpty())
-        set(value) = prefs.edit().putString(KEY_RULES, value.joinToString("\n") {
-            "${it.pattern}$SEP${it.replacement}$SEP${it.isRegex}"
-        }).apply()
+        set(value) = prefs.edit {
+            putString(KEY_RULES, value.joinToString("\n") { "${it.pattern}$SEP${it.replacement}$SEP${it.isRegex}" })
+        }
 
     /** Compiled dictionary, rebuilt only when the rules change. */
     val dictionary: Dictionary

@@ -29,7 +29,8 @@ the phone.
 
 ## How it works
 
-ML Kit's `genai-text-to-speech` is used only to list and download the GenAI voices. Those voices are
+ML Kit's `genai-text-to-speech` (1.0.0-alpha1, still an alpha) is used only to list and download the
+GenAI voices. Those voices are
 ordinary voices of Google's TTS engine (`com.google.android.tts`), so ML Kit's own `synthesize()`
 calls `speak()` and plays the audio itself. A TTS service built on it would play every utterance
 twice, once at 1× speed.
@@ -58,6 +59,8 @@ natively.
   start at once.
 
 ## Building
+
+Needs JDK 17 and the Android SDK with platform 37 (the Gradle wrapper fetches everything else).
 
 ```bash
 ./gradlew testDebugUnitTest assembleDebug
