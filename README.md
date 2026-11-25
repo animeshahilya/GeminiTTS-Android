@@ -60,7 +60,7 @@ natively.
 
 ## Building
 
-Needs JDK 17 and the Android SDK with platform 37 (the Gradle wrapper fetches everything else).
+Needs JDK 17 and the Android SDK with platform 37.2 (the Gradle wrapper fetches everything else).
 
 ```bash
 ./gradlew testDebugUnitTest assembleDebug

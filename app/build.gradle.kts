@@ -14,7 +14,9 @@ val keystoreProperties = Properties().apply {
 
 android {
   namespace = "com.animeshahilya.geminitts"
-  compileSdk = 37
+  compileSdk {
+    version = release(37) { minorApiLevel = 2 }
+  }
   defaultConfig {
     applicationId = "com.animeshahilya.geminitts"
     minSdk = 26
