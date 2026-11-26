@@ -49,7 +49,8 @@ object BackupRestore {
     /** Restores a JSON backup and returns restored and skipped dictionary rule counts. */
     fun importBackupJson(prefs: TtsPrefs, raw: String): ImportResult {
         require(raw.length <= MAX_IMPORT_CHARS) { "Backup file exceeds 5 MB limit." }
-        val root = JsonCodec.parseObject(raw) ?: throw IllegalArgumentException("Unreadable JSON backup file.")
+        val cleaned = raw.removePrefix("\uFEFF")
+        val root = JsonCodec.parseObject(cleaned) ?: throw IllegalArgumentException("Unreadable JSON backup file.")
 
         if ("voiceId" in root) prefs.voiceId = root["voiceId"]?.toString()?.takeIf { it.isNotBlank() }?.let(::voiceId)
         if ("cacheEnabled" in root) prefs.cacheEnabled = root.bool("cacheEnabled", prefs.cacheEnabled)
@@ -135,8 +136,8 @@ object BackupRestore {
     fun parseNvdaDic(raw: String, language: String = ""): List<DictionaryRule> {
         require(raw.length <= MAX_IMPORT_CHARS) { "Dictionary file exceeds 5 MB limit." }
         val rules = ArrayList<DictionaryRule>()
-        for (line in raw.lineSequence()) {
-            if (line.isBlank() || line.startsWith('#')) continue
+        for (line in raw.removePrefix("\uFEFF").lineSequence()) {
+            if (line.isBlank() || line.trimStart().startsWith('#')) continue
             val parts = line.split('\t')
             if (parts.size < 2) continue
             val pattern = parts[0]

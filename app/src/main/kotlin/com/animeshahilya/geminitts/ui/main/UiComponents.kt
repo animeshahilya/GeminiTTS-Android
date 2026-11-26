@@ -119,6 +119,10 @@ fun FactorSlider(
 ) {
     val clamped = value.coerceIn(range.start, range.endInclusive)
     val shown = "%.2fx".format(Locale.ROOT, clamped)
+    fun snap(v: Float): Float {
+        val stepped = ((v / step).roundToInt() * step).coerceIn(range.start, range.endInclusive)
+        return (stepped * 100f).roundToInt() / 100f
+    }
     StepSliderRow(
         label = label,
         shown = shown,
@@ -127,9 +131,9 @@ fun FactorSlider(
         steps = (((range.endInclusive - range.start) / step).roundToInt() - 1).coerceAtLeast(0),
         canDecrease = clamped > range.start + 0.001f,
         canIncrease = clamped < range.endInclusive - 0.001f,
-        onDecrease = { onChange(((clamped - step) / step).roundToInt() * step) },
-        onIncrease = { onChange(((clamped + step) / step).roundToInt() * step) },
-        onSlide = { raw -> onChange(((raw / step).roundToInt() * step).coerceIn(range.start, range.endInclusive)) },
+        onDecrease = { onChange(snap(clamped - step)) },
+        onIncrease = { onChange(snap(clamped + step)) },
+        onSlide = { raw -> onChange(snap(raw)) },
         onReset = if (abs(clamped - defaultValue) > 0.01f) { { onChange(defaultValue) } } else null
     )
 }

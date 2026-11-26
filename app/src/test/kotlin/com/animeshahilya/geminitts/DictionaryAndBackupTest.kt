@@ -48,12 +48,12 @@ class DictionaryAndBackupTest {
         assertEquals(1L, parsed!!["a"])
 
         val dic = """
-            # comment
+            	# comment with BOM
             GIF	jif	0	2
             (\d+)k	${'$'}1 thousand	0	1
             (\d+)m	\1 million	0	1
             foo	bar	1	0
-        """.trimIndent()
+        """.trimIndent().let { "\uFEFF" + it }
         val rules = BackupRestore.parseNvdaDic(dic)
         assertEquals(4, rules.size)
         assertTrue(rules[0].wholeWord && !rules[0].caseSensitive)

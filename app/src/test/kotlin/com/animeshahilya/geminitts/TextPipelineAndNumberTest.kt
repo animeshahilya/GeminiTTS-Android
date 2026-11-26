@@ -60,7 +60,9 @@ class TextPipelineAndNumberTest {
 
     @Test fun collapsesRepeatedEmojisAndSilencesSymbolsSafely() {
         val opts = TextOptions(collapseRepeats = true, silenceSymbols = true)
-        assertEquals("Haha 😂, 4", TextPipeline.process("Haha 😂😂😂😂", opts, emptyDict).toString().trim())
+        assertEquals("Haha 😂, 4", TextPipeline.process("Haha 😂😂😂😂", opts, emptyDict).toString())
+        assertTrue(TextPipeline.isSingleCharacter("❤️"))
+        assertTrue(TextPipeline.isSingleCharacter("e\u0301"))
         assertEquals("temp -5 range 10-20 hello world mail user@test.com",
             TextPipeline.process("temp -5 range 10-20 **hello***world** mail user@test.com", opts, emptyDict).toString())
     }

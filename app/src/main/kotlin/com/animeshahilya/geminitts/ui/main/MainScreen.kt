@@ -22,6 +22,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,6 +30,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -103,18 +106,25 @@ fun MainScreen(viewModel: MainScreenViewModel = viewModel()) {
     ) { padding ->
         val activeSettings = settingsPage
         if (activeSettings != null) {
-            Column(
-                Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                SettingsScreen(
-                    page = activeSettings,
-                    state = state,
-                    viewModel = viewModel,
-                    onNavigate = { settingsPage = it },
-                    onExportBackup = { exportBackupLauncher.launch("gemini-tts-backup.json") },
-                    onImportBackup = { importBackupLauncher.launch(arrayOf("application/json", "*/*")) }
-                )
+            key(activeSettings) {
+                Column(
+                    Modifier
+                        .padding(padding)
+                        .fillMaxSize()
+                        .semantics { paneTitle = activeSettings.title }
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    SettingsScreen(
+                        page = activeSettings,
+                        state = state,
+                        viewModel = viewModel,
+                        onNavigate = { settingsPage = it },
+                        onExportBackup = { exportBackupLauncher.launch("gemini-tts-backup.json") },
+                        onImportBackup = { importBackupLauncher.launch(arrayOf("application/json", "*/*")) }
+                    )
+                }
             }
         } else {
             Column(Modifier.padding(padding).fillMaxSize()) {
@@ -123,19 +133,25 @@ fun MainScreen(viewModel: MainScreenViewModel = viewModel()) {
                         Tab(selected = tab == index, onClick = { tab = index }, text = { Text(title) })
                     }
                 }
-                Column(
-                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    when (tab) {
-                        0 -> VoiceTab(state, viewModel, onOpenSettings = { settingsPage = SettingsPage.HUB })
-                        1 -> LanguagesTab(state, viewModel)
-                        else -> DictionaryTab(
-                            state = state,
-                            viewModel = viewModel,
-                            onImportDic = { importDicLauncher.launch(arrayOf("*/*")) },
-                            onExportDic = { exportDicLauncher.launch("gemini-tts-dictionary.dic") }
-                        )
+                key(tab) {
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .semantics { paneTitle = tabs[tab] }
+                            .verticalScroll(rememberScrollState())
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        when (tab) {
+                            0 -> VoiceTab(state, viewModel, onOpenSettings = { settingsPage = SettingsPage.HUB })
+                            1 -> LanguagesTab(state, viewModel)
+                            else -> DictionaryTab(
+                                state = state,
+                                viewModel = viewModel,
+                                onImportDic = { importDicLauncher.launch(arrayOf("*/*")) },
+                                onExportDic = { exportDicLauncher.launch("gemini-tts-dictionary.dic") }
+                            )
+                        }
                     }
                 }
             }

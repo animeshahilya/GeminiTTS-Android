@@ -107,7 +107,13 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
 
     private var startedAt = 0L
     private var firstAudioSeen = false
-    private val tts: TextToSpeech = TextToSpeech(application, { refreshEngineCheck() }, application.packageName).apply {
+    @Volatile private var ttsReady = false
+    @Volatile private var pendingTtsAction: (() -> Unit)? = null
+    private val tts: TextToSpeech = TextToSpeech(application, { status ->
+        ttsReady = status == TextToSpeech.SUCCESS
+        refreshEngineCheck()
+        if (ttsReady) pendingTtsAction?.also { pendingTtsAction = null }?.invoke()
+    }, application.packageName).apply {
         setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(id: String?) {}
             override fun onAudioAvailable(id: String?, audio: ByteArray?) {
@@ -234,19 +240,12 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
         val locale = _state.value.testLocale
-        val targetEntry = prefs.voicesFor(locale, id).firstOrNull() ?: prefs.voicesAnyLanguage(id).firstOrNull()
+        val targetEntry = prefs.voicesFor(locale, id).firstOrNull { it.id == id }
+            ?: prefs.voicesAnyLanguage(id).firstOrNull { it.id == id }
+            ?: prefs.voicesFor(locale, id).firstOrNull()
         val effectiveLocale = targetEntry?.locale ?: locale
-        val ttsVoice = targetEntry?.let { entry ->
-            runCatching { tts.voices?.firstOrNull { it.name == entry.name } }.getOrNull()
-        }
         _state.update { it.copy(speaking = true, previewingVoiceId = id) }
-        tts.language = effectiveLocale
-        if (ttsVoice != null) tts.voice = ttsVoice
-        tts.setSpeechRate(1f)
-        tts.setPitch(1f)
-        if (tts.speak(SampleTexts.forLocale(effectiveLocale), TextToSpeech.QUEUE_FLUSH, null, "preview_$id") != TextToSpeech.SUCCESS) {
-            finished(false)
-        }
+        speakWhenReady(effectiveLocale, targetEntry?.name, SampleTexts.forLocale(effectiveLocale), "preview_$id")
     }
 
     fun download(locale: Locale) {
@@ -437,18 +436,29 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
         startedAt = SystemClock.elapsedRealtime()
         firstAudioSeen = false
         _state.update { it.copy(speaking = true, previewingVoiceId = null, firstAudioMs = null, totalMs = null) }
-        val s = _state.value
-        val voice = prefs.voiceFor(s.testLocale)?.let { entry ->
-            runCatching { tts.voices?.firstOrNull { it.name == entry.name } }.getOrNull()
+        val locale = _state.value.testLocale
+        val targetVoice = prefs.voiceFor(locale)?.name
+        speakWhenReady(locale, targetVoice, text, "test")
+    }
+
+    private fun speakWhenReady(locale: Locale, voiceName: String?, text: String, utteranceId: String) {
+        val action: () -> Unit = {
+            val ttsVoice = voiceName?.let { name ->
+                runCatching { tts.voices?.firstOrNull { it.name == name } }.getOrNull()
+            }
+            tts.language = locale
+            if (ttsVoice != null) tts.voice = ttsVoice
+            tts.setSpeechRate(1f)
+            tts.setPitch(1f)
+            if (tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId) != TextToSpeech.SUCCESS) {
+                finished(false)
+            }
         }
-        tts.language = s.testLocale
-        if (voice != null) tts.voice = voice
-        tts.setSpeechRate(1f)
-        tts.setPitch(1f)
-        if (tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "test") != TextToSpeech.SUCCESS) finished(false)
+        if (ttsReady) action() else pendingTtsAction = action
     }
 
     fun stop() {
+        pendingTtsAction = null
         tts.stop()
         _state.update { it.copy(speaking = false, previewingVoiceId = null) }
     }
@@ -586,6 +596,7 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
     fun clearStatusMessage() = _state.update { it.copy(statusMessage = null) }
 
     override fun onCleared() {
+        pendingTtsAction = null
         tts.shutdown()
         google.shutdown()
         client.close()

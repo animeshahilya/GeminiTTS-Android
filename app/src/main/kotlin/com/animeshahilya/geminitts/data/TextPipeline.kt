@@ -340,7 +340,9 @@ object TextPipeline {
                 } else break
             }
             if (count >= 3) {
-                edits += Triple(i, nextPos, "$cluster, $count ")
+                val needsSpace = nextPos < s.length && !s[nextPos].isWhitespace() && s[nextPos] !in ".,!?;:"
+                val repl = if (needsSpace) "$cluster, $count " else "$cluster, $count"
+                edits += Triple(i, nextPos, repl)
             }
             i = nextPos
         }
@@ -411,12 +413,30 @@ object TextPipeline {
         }
     }
 
-    /** True when [text] is a single Unicode code point or a single Indic akshara cluster. */
+    /** True when [text] is a single visual character, emoji cluster, or Indic akshara. */
     fun isSingleCharacter(text: CharSequence): Boolean {
         val s = text.toString().trim()
         if (s.isEmpty()) return false
         if (s.codePointCount(0, s.length) == 1) return true
-        return isSingleIndicCluster(s)
+        if (emojiClusterLength(s, 0) == s.length) return true
+        return isSingleIndicCluster(s) || isSingleBaseWithMarks(s)
+    }
+
+    private fun isSingleBaseWithMarks(s: String): Boolean {
+        val first = Character.codePointAt(s, 0)
+        var i = Character.charCount(first)
+        if (i >= s.length) return false
+        while (i < s.length) {
+            val cp = Character.codePointAt(s, i)
+            val t = Character.getType(cp)
+            val isMark = t == Character.NON_SPACING_MARK.toInt() ||
+                t == Character.COMBINING_SPACING_MARK.toInt() ||
+                t == Character.ENCLOSING_MARK.toInt() ||
+                cp in 0xFE00..0xFE0F
+            if (!isMark) return false
+            i += Character.charCount(cp)
+        }
+        return true
     }
 
     private fun isSingleIndicCluster(s: String): Boolean {
