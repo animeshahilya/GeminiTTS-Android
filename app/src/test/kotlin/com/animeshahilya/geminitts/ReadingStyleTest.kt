@@ -1,9 +1,12 @@
 package com.animeshahilya.geminitts
 
+import android.text.Spanned
+import android.text.style.TtsSpan
 import com.animeshahilya.geminitts.data.ReadingStyle
 import com.animeshahilya.geminitts.data.splitForPauses
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReadingStyleTest {
@@ -40,5 +43,27 @@ class ReadingStyleTest {
 
     @Test fun blankLinesKeepTheLongestPause() {
         assertEquals(listOf("Title" to 800, "Body." to 0), split("Title\n\n\nBody.  \n"))
+    }
+
+    @Test fun longTextChunksInStandardModeWithoutSplittingTtsSpans() {
+        val sentence = "This is a moderately long sentence with enough words to force chunking. "
+        val prefix = sentence.repeat(18) // ~1296 chars
+        val num = "5551234567"
+        val full = FakeSpanned.withTtsSpan(prefix + num + ". " + sentence.repeat(10), prefix.length, prefix.length + num.length)
+
+        val chunks = splitForPauses(full, ReadingStyle.PRESETS.first(), maxChunkChars = 1400)
+        assertTrue(chunks.size >= 2)
+        assertTrue(chunks.all { it.first.length <= 1400 })
+        val chunkWithPhone = chunks.firstOrNull { num in it.first.toString() }
+        assertTrue(chunkWithPhone != null)
+        val spannedChunk = chunkWithPhone!!.first as Spanned
+        assertEquals(1, spannedChunk.getSpans(0, spannedChunk.length, TtsSpan::class.java).size)
+    }
+
+    @Test fun pauseSplitterNeverBreaksInsideTtsSpan() {
+        val text = "Call 123. 456\n789 now. Next."
+        val spanned = FakeSpanned.withTtsSpan(text, 5, 17)
+        val pieces = splitForPauses(spanned, style)
+        assertEquals(listOf("Call 123. 456\n789 now." to 300, "Next." to 0), pieces.map { it.first.toString() to it.second })
     }
 }

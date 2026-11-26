@@ -8,6 +8,13 @@
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.accessibilityservice.AccessibilityService" />
+        </intent>
     </queries>
 
     <application
@@ -63,6 +70,35 @@
             <meta-data
                 android:name="android.speech.tts"
                 android:resource="@xml/tts_engine" />
+        </service>
+
+        <activity
+            android:name=".ui.RecentSpeechActivity"
+            android:label="@string/recent_speech_title"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.GeminiTts.Translucent" />
+
+        <service
+            android:name=".service.RecentSpeechTile"
+            android:label="@string/recent_speech_title"
+            android:icon="@drawable/ic_qs_recent_speech"
+            android:exported="true"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".service.VoicePresetTile"
+            android:label="@string/voice_preset_tile_title"
+            android:icon="@drawable/ic_qs_preset"
+            android:exported="true"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
         </service>
     </application>
 

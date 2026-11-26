@@ -2,7 +2,9 @@ package com.animeshahilya.geminitts.service
 
 import android.content.ComponentCallbacks2
 import android.media.AudioFormat
+import android.os.Bundle
 import android.os.PowerManager
+import android.os.Process
 import android.os.SystemClock
 import android.speech.tts.SynthesisCallback
 import android.speech.tts.SynthesisRequest
@@ -10,15 +12,21 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.TextToSpeechService
 import android.speech.tts.Voice
 import android.text.Spanned
+import android.text.style.LocaleSpan
 import android.text.style.TtsSpan
 import android.util.Log
+import com.animeshahilya.geminitts.audio.LeadingSilenceTrimmer
 import com.animeshahilya.geminitts.audio.PcmProcessor
 import com.animeshahilya.geminitts.data.AudioCache
 import com.animeshahilya.geminitts.data.GenAiVoices
+import com.animeshahilya.geminitts.data.RecentSpeech
+import com.animeshahilya.geminitts.data.TextPipeline
+import com.animeshahilya.geminitts.data.TextPreset
 import com.animeshahilya.geminitts.data.TtsPrefs
 import com.animeshahilya.geminitts.data.VoiceEntry
 import com.animeshahilya.geminitts.data.iso3Country
 import com.animeshahilya.geminitts.data.iso3Language
+import com.animeshahilya.geminitts.data.resolveVoicePlan
 import com.animeshahilya.geminitts.data.splitForPauses
 import com.animeshahilya.geminitts.engine.PlatformSynth
 import kotlinx.coroutines.CoroutineScope
@@ -33,9 +41,9 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * The system TTS engine. Text goes through the user's dictionary, then to Google's on-device GenAI
- * voice for the caller's language (or that language's standard Google voice while it isn't downloaded). The audio is sped up or
- * pitched with Sonic to match the caller's rate, and phrases are cached at 1x.
+ * The system TTS engine. Applies dictionary & blind-friendly text rules, honors per-language and
+ * per-app overrides, sleep timer (never silencing screen readers), recent-speech capture, and
+ * streams Google's on-device GenAI voices through Sonic + AudioOptimizer.
  */
 class GenAiTtsService : TextToSpeechService() {
 
@@ -66,8 +74,6 @@ class GenAiTtsService : TextToSpeechService() {
                 return synth.warmUp(entry?.name, entry?.locale ?: GenAiVoices.DEFAULT_LOCALE)
             }
             val warmed = warmUp()
-            // The same ML Kit calls the app's screen makes. When the GenAI voice wasn't usable yet (fresh install,
-            // or Google not offering it until ML Kit has asked), read Google's voices again and warm up once more.
             GenAiVoices.refresh(this@GenAiTtsService)
             if (!warmed && prefs.voices.isNotEmpty()) {
                 synth.forget()
@@ -82,7 +88,6 @@ class GenAiTtsService : TextToSpeechService() {
         super.onDestroy()
     }
 
-    /** Voices of every language; US English until ML Kit has answered once. */
     private fun knownVoices(): List<VoiceEntry> = prefs.voices.ifEmpty { listOf(VoiceEntry("", GenAiVoices.DEFAULT_LOCALE)) }
 
     override fun onIsLanguageAvailable(lang: String?, country: String?, variant: String?): Int {
@@ -103,12 +108,15 @@ class GenAiTtsService : TextToSpeechService() {
         return arrayOf(locale.iso3Language(), locale.iso3Country(), "")
     }
 
-    override fun onGetVoices(): List<Voice> = prefs.voices.map { entry ->
-        val features = if (synth.installedVoice(entry.name) == null) {
-            setOf(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)
-        } else emptySet()
-        Voice(entry.name, entry.locale, Voice.QUALITY_VERY_HIGH, Voice.LATENCY_NORMAL, false, features)
-    }
+    override fun onGetVoices(): List<Voice> = prefs.voices
+        .filter { prefs.isLocaleEnabled(it.locale) }
+        .ifEmpty { prefs.voices }
+        .map { entry ->
+            val features = if (synth.installedVoice(entry.name) == null) {
+                setOf(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)
+            } else emptySet()
+            Voice(entry.name, entry.locale, Voice.QUALITY_VERY_HIGH, Voice.LATENCY_NORMAL, false, features)
+        }
 
     override fun onIsValidVoiceName(voiceName: String?): Int =
         if (prefs.voices.any { it.name == voiceName }) TextToSpeech.SUCCESS else TextToSpeech.ERROR
@@ -134,54 +142,99 @@ class GenAiTtsService : TextToSpeechService() {
         val gen = generation.get()
         val cancelled = { generation.get() != gen }
 
-        val text = prefs.dictionary.apply(request.charSequenceText ?: "")
-        // The reading style scales whatever the app asked for, so it works with any app's own settings.
-        val style = prefs.style()
+        val caller = CallerTracker.callerPackage(this, request.callerUid)
+        if (caller != null) {
+            if (prefs.isSleepStopped() && !CallerTracker.isSpokenAccessibilityService(this, caller)) {
+                callback.error(TextToSpeech.ERROR_SERVICE)
+                return
+            }
+            prefs.noteSeenApp(caller)
+            RecentSpeech.record(prefs, request.charSequenceText)
+        }
+
+        val appProfile = caller?.let { prefs.appProfiles[it] }
+        val rawText = request.charSequenceText ?: ""
+
+        // Honor a whole-utterance LocaleSpan (e.g. TalkBack's spoken-language switcher).
+        val wholeLocale = wholeTextLocale(rawText)
+        val reqLang = wholeLocale?.iso3Language() ?: request.language
+        val reqCountry = wholeLocale?.iso3Country() ?: request.country
+
+        val plan = resolveVoicePlan(
+            voices = prefs.voices,
+            globalVoiceId = prefs.voiceId,
+            appVoiceId = appProfile?.voiceId,
+            langOverrideLookup = { locale -> prefs.languageOverrideFor(locale)?.voiceId },
+            wholeLocale = wholeLocale,
+            reqLang = reqLang,
+            reqCountry = reqCountry,
+            requestedVoiceName = request.voiceName,
+            defaultLocale = GenAiVoices.DEFAULT_LOCALE,
+            isInternalCaller = caller == null
+        )
+        val language = plan.language
+        val langOverride = prefs.languageOverrideFor(language)
+        val voice = plan.candidates.firstNotNullOfOrNull { synth.installedVoice(it.name) }
+
+        plan.wanted?.let { wanted ->
+            val using = voice?.name?.removeSuffix("-local")
+            if (!using.equals(wanted.name, ignoreCase = true)) downloadLater(wanted)
+        }
+
+        val style = prefs.style(appProfile?.styleId)
+        val isExternalCaller = caller != null
+        val callerRate = if ((isExternalCaller && prefs.lockSpeed) || request.speechRate <= 0) 1f else request.speechRate / 100f
+        val callerPitch = if ((isExternalCaller && prefs.lockPitch) || request.pitch <= 0) 1f else request.pitch / 100f
+        val callerVolume = if (isExternalCaller && prefs.lockVolume) 1f else readVolumeParam(request.params)
+
+        val effectiveSpeed = (callerRate * prefs.baseSpeed * style.speed *
+            (langOverride?.speed ?: 1f) * (appProfile?.speed ?: 1f)).coerceIn(0.25f, 4f)
+        val effectivePitch = (callerPitch * prefs.basePitch * style.pitch *
+            (langOverride?.pitch ?: 1f) * (appProfile?.pitch ?: 1f)).coerceIn(0.25f, 4f)
+        val effectiveVolume = (callerVolume * (prefs.volumePercent / 100f) *
+            (langOverride?.volume ?: 1f) * (appProfile?.volume ?: 1f)).coerceIn(0f, 2f)
+
+        val textOpts = prefs.textOptions.applyAppPreset(appProfile?.textPreset ?: TextPreset.INHERIT)
+        val text = TextPipeline.process(rawText, textOpts, prefs.dictionary, language.toLanguageTag())
+        val isSingleChar = TextPipeline.isSingleCharacter(text)
+
         val out = PcmProcessor(
             callback = callback,
             isCancelled = cancelled,
-            speed = (request.speechRate / 100f * style.speed).coerceIn(0.25f, 4f),
-            pitch = (request.pitch / 100f * style.pitch).coerceIn(0.25f, 4f)
+            speed = effectiveSpeed,
+            pitch = effectivePitch,
+            volume = effectiveVolume,
+            clarity = prefs.clarityPreset,
+            leveler = prefs.levelerEnabled,
+            trimLeadingSilence = prefs.trimSilence,
+            isSingleChar = isSingleChar
         )
         if (text.isBlank()) {
             out.finish()
             return
         }
 
-        // Try the voice the caller named, then the chosen voice in that language, then any other
-        // downloaded GenAI voice in it: each voice is its own download, and apps (Android's Settings
-        // included) may name one that isn't there. The GenAI voices are multilingual and switch language
-        // by themselves, so next comes the chosen voice in any downloaded language. Google's standard
-        // voice for the language is the last resort.
-        val requested = prefs.voices.firstOrNull { it.name == request.voiceName }
-        val sameLanguage = listOfNotNull(requested) + if (requested != null) {
-            prefs.voicesFor(requested.locale)
-        } else {
-            prefs.voicesFor(request.language, request.country)
-        }
-        val language = sameLanguage.firstOrNull()?.locale ?: GenAiVoices.DEFAULT_LOCALE
-        val voice = (sameLanguage + prefs.voicesAnyLanguage()).firstNotNullOfOrNull { synth.installedVoice(it.name) }
-        // Not the chosen voice in this language: fetch it in the background, used from the next utterance on.
-        prefs.voiceFor(language)?.let { wanted ->
-            val using = voice?.name?.removeSuffix("-local")
-            if (!using.equals(wanted.name, ignoreCase = true)) downloadLater(wanted)
-        }
-        Log.d(TAG, "request ${request.language}-${request.country} ${request.voiceName ?: ""} -> ${voice?.name ?: "standard ${language.toLanguageTag()} voice"}")
+        Log.d(
+            TAG,
+            "request ${reqLang}-${reqCountry} ${request.voiceName ?: ""} (caller=${caller ?: "self"}) -> " +
+                "${voice?.name ?: "standard ${language.toLanguageTag()} voice"} speed=$effectiveSpeed vol=$effectiveVolume"
+        )
 
-        // Audio is only cached for the GenAI voice, keyed by its engine name and the style's pauses
-        // (speed and pitch are applied on replay), and not for text carrying TtsSpans (the spans
-        // change how it is read but not its string).
         val hasSpans = text is Spanned && text.getSpans(0, text.length, TtsSpan::class.java).isNotEmpty()
-        // Google updates its voices with its engine: saved audio from an older engine would sound different.
         if (synth.engineVersion != prefs.engineVersion) {
             cache.clear()
             prefs.engineVersion = synth.engineVersion
         }
         val key = if (voice != null && prefs.cacheEnabled && !hasSpans) {
-            cache.key(text.toString(), "${voice.name}|${synth.engineVersion}|${style.sentencePauseMs}|${style.paragraphPauseMs}")
+            cache.key(
+                text.toString(),
+                "${voice.name}|${synth.engineVersion}|${style.sentencePauseMs}|${style.paragraphPauseMs}|${textOpts.fingerprint}|${prefs.trimSilence}"
+            )
         } else null
         val pieces = splitForPauses(text, style)
 
+        val prevPriority = Process.getThreadPriority(Process.myTid())
+        runCatching { Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO) }
         wakeLock.acquire(WAKE_LOCK_MS)
         val startedAt = SystemClock.elapsedRealtime()
         try {
@@ -189,12 +242,11 @@ class GenAiTtsService : TextToSpeechService() {
                 out.start(clip.sampleRate, clip.channels)
                 out.pcm(clip.pcm)
                 out.finish(clip.sampleRate)
-                Log.d(TAG, "cache hit, ${voice?.name}, rate ${request.speechRate}, ${SystemClock.elapsedRealtime() - startedAt} ms")
+                Log.d(TAG, "cache hit, ${voice?.name}, ${SystemClock.elapsedRealtime() - startedAt} ms")
                 return
             }
             var result = speak(pieces, voice, language, out, cancelled, key)
             if (result == PlatformSynth.Result.FAILED && voice != null && !out.started && !cancelled()) {
-                // The GenAI voice failed before any audio (e.g. not downloaded yet): use the standard voice of that language.
                 Log.w(TAG, "GenAI voice ${voice.name} failed, using the standard ${language.toLanguageTag()} voice")
                 synth.forget()
                 result = speak(pieces, null, language, out, cancelled, null)
@@ -207,6 +259,7 @@ class GenAiTtsService : TextToSpeechService() {
             callback.error()
         } finally {
             if (wakeLock.isHeld) wakeLock.release()
+            runCatching { Process.setThreadPriority(prevPriority) }
         }
     }
 
@@ -243,7 +296,9 @@ class GenAiTtsService : TextToSpeechService() {
         var maxGapMs = 0L
         var audioBytes = 0L
         var result = PlatformSynth.Result.DONE
-        for ((text, pauseMs) in pieces) {
+        for ((index, piece) in pieces.withIndex()) {
+            val (text, pauseMs) = piece
+            if (index > 0) out.resetLeadingTrim()
             result = synth.synthesize(text, voice, language, cancelled) { event ->
                 when (event) {
                     is PlatformSynth.Event.Begin -> {
@@ -264,7 +319,6 @@ class GenAiTtsService : TextToSpeechService() {
                 }
             }
             if (result != PlatformSynth.Result.DONE) break
-            // Silence is stretched with the speech, so pauses shrink at higher speeds too.
             if (pauseMs > 0 && out.started) emit(ByteArray(sampleRate * channels * 2 / 1000 * pauseMs))
         }
         Log.d(
@@ -276,10 +330,38 @@ class GenAiTtsService : TextToSpeechService() {
             out.finish(sampleRate)
             val audio = keep
             if (key != null && audio != null && !cancelled()) {
-                cache.put(key, AudioCache.Clip(sampleRate, channels, audio.toByteArray()))
+                val rawBytes = audio.toByteArray()
+                val stored = if (prefs.trimSilence) {
+                    LeadingSilenceTrimmer.trimClip(rawBytes, sampleRate, channels, trimLead = true, trimTail = true)
+                } else rawBytes
+                if (stored.isNotEmpty()) cache.put(key, AudioCache.Clip(sampleRate, channels, stored))
             }
         }
         return result
+    }
+
+    @Suppress("DEPRECATION")
+    private fun readVolumeParam(params: Bundle?): Float {
+        if (params == null) return 1f
+        val v = params.get(TextToSpeech.Engine.KEY_PARAM_VOLUME) ?: return 1f
+        val parsed = when (v) {
+            is Number -> v.toFloat()
+            is String -> v.toFloatOrNull() ?: 1f
+            else -> 1f
+        }
+        return parsed.coerceIn(0f, 1f)
+    }
+
+    private fun wholeTextLocale(cs: CharSequence): Locale? {
+        if (cs !is Spanned) return null
+        var first = 0
+        var last = cs.length
+        while (first < last && cs[first].isWhitespace()) first++
+        while (last > first && cs[last - 1].isWhitespace()) last--
+        if (first == last) return null
+        return cs.getSpans(0, cs.length, LocaleSpan::class.java)
+            .firstOrNull { it.locale != null && cs.getSpanStart(it) <= first && cs.getSpanEnd(it) >= last }
+            ?.locale
     }
 
     companion object {

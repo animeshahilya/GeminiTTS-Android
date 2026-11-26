@@ -2,4 +2,10 @@
 <resources>
 
     <style name="Theme.GeminiTts" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <style name="Theme.GeminiTts.Translucent" parent="Theme.GeminiTts">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">true</item>
+    </style>
 </resources>
