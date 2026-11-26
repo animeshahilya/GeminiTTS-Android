@@ -25,6 +25,16 @@ class TtsPrefs(context: Context) {
         get() = prefs.getBoolean(KEY_CACHE, true)
         set(value) = prefs.edit { putBoolean(KEY_CACHE, value) }
 
+    /** Download a language's voice in the background the first time an app asks for that language. */
+    var autoDownload: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_DOWNLOAD, true)
+        set(value) = prefs.edit { putBoolean(KEY_AUTO_DOWNLOAD, value) }
+
+    /** Google's engine version the saved audio was made with; a new version means new-sounding voices. */
+    var engineVersion: Long
+        get() = prefs.getLong(KEY_ENGINE_VERSION, 0L)
+        set(value) = prefs.edit { putLong(KEY_ENGINE_VERSION, value) }
+
     var styleId: String
         get() = prefs.getString(KEY_STYLE, null) ?: ReadingStyle.STANDARD
         set(value) = prefs.edit { putString(KEY_STYLE, value) }
@@ -111,6 +121,8 @@ class TtsPrefs(context: Context) {
         private const val KEY_VOICE = "voice_name"
         private const val KEY_CACHE = "cache_enabled"
         private const val KEY_VOICES = "genai_voices"
+        private const val KEY_AUTO_DOWNLOAD = "auto_download"
+        private const val KEY_ENGINE_VERSION = "engine_version"
         private const val KEY_RULES = "dictionary_rules"
         private const val KEY_STYLE = "reading_style"
         private const val KEY_CUSTOM_SPEED = "custom_speed"

@@ -2,6 +2,8 @@ package com.animeshahilya.geminitts.data
 
 import android.content.Context
 import android.util.Log
+import com.google.mlkit.genai.common.DownloadStatus
+import com.google.mlkit.genai.common.FeatureStatus
 import com.google.mlkit.genai.texttospeech.SpeechSynthesis
 import com.google.mlkit.genai.texttospeech.SpeechSynthesizer
 import com.google.mlkit.genai.texttospeech.VoiceInfo
@@ -41,13 +43,45 @@ object GenAiVoices {
         return voices
     }
 
-    /** Refreshes the stored list with a short-lived client. */
+    /**
+     * Refreshes the stored list with a short-lived client, then asks ML Kit for the status of each language's
+     * chosen voice, as the app's screen does. On the S25 Ultra the voices only spoke after the app had been
+     * opened, so the service repeats the app's ML Kit calls when it starts.
+     */
     suspend fun refresh(context: Context) {
         try {
-            client().use { fetch(context, it) }
+            client().use { client ->
+                val voices = fetch(context, client)
+                val prefs = TtsPrefs(context)
+                for (locale in voices.map { it.locale }.distinct()) {
+                    val name = prefs.voiceFor(locale)?.name ?: continue
+                    val voice = voices.firstOrNull { it.name == name } ?: continue
+                    val status = runCatching { client.checkStatus(voice) }.getOrNull()
+                    Log.d(TAG, "${voice.name}: status $status")
+                }
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Could not list GenAI voices", e)
         }
+    }
+
+    /** Downloads the voice called [name] in [locale] with a short-lived client; true once it is on the phone. */
+    suspend fun download(locale: Locale, name: String): Boolean = try {
+        client().use { client ->
+            val voice = client.getSupportedVoices(locale).firstOrNull { it.name == name } ?: return false
+            var done = false
+            client.download(voice).collect { status ->
+                when (status) {
+                    is DownloadStatus.DownloadCompleted -> done = true
+                    is DownloadStatus.DownloadFailed -> Log.w(TAG, "Download of $name failed", status.e)
+                    else -> Unit
+                }
+            }
+            done || client.checkStatus(voice) == FeatureStatus.AVAILABLE
+        }
+    } catch (e: Exception) {
+        Log.w(TAG, "Download of $name failed", e)
+        false
     }
 
     private const val TAG = "GenAiVoices"

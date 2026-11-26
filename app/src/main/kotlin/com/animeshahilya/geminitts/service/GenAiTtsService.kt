@@ -29,6 +29,7 @@ import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
 import java.io.InterruptedIOException
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -47,6 +48,9 @@ class GenAiTtsService : TextToSpeechService() {
     // Bumped by onStop; an utterance whose number is stale stops at its next chunk.
     private val generation = AtomicLong()
 
+    // Languages already downloaded (or tried) in the background since the service started.
+    private val downloads: MutableSet<Locale> = ConcurrentHashMap.newKeySet()
+
     override fun onCreate() {
         // super.onCreate() already asks for the default language, so set up first.
         prefs = TtsPrefs(this)
@@ -57,11 +61,19 @@ class GenAiTtsService : TextToSpeechService() {
             .apply { setReferenceCounted(false) }
         super.onCreate()
         scope.launch {
-            val locale = Locale.getDefault()
-            val entry = prefs.voiceFor(locale)
-            synth.warmUp(entry?.name, entry?.locale ?: GenAiVoices.DEFAULT_LOCALE)
+            fun warmUp(): Boolean {
+                val entry = prefs.voiceFor(Locale.getDefault())
+                return synth.warmUp(entry?.name, entry?.locale ?: GenAiVoices.DEFAULT_LOCALE)
+            }
+            val warmed = warmUp()
+            // The same ML Kit calls the app's screen makes. When the GenAI voice wasn't usable yet (fresh install,
+            // or Google not offering it until ML Kit has asked), read Google's voices again and warm up once more.
+            GenAiVoices.refresh(this@GenAiTtsService)
+            if (!warmed && prefs.voices.isNotEmpty()) {
+                synth.forget()
+                warmUp()
+            }
         }
-        scope.launch { GenAiVoices.refresh(this@GenAiTtsService) }
     }
 
     override fun onDestroy() {
@@ -149,14 +161,24 @@ class GenAiTtsService : TextToSpeechService() {
         }
         val language = sameLanguage.firstOrNull()?.locale ?: GenAiVoices.DEFAULT_LOCALE
         val voice = (sameLanguage + prefs.voicesAnyLanguage()).firstNotNullOfOrNull { synth.installedVoice(it.name) }
+        // Not the chosen voice in this language: fetch it in the background, used from the next utterance on.
+        prefs.voiceFor(language)?.let { wanted ->
+            val using = voice?.name?.removeSuffix("-local")
+            if (!using.equals(wanted.name, ignoreCase = true)) downloadLater(wanted)
+        }
         Log.d(TAG, "request ${request.language}-${request.country} ${request.voiceName ?: ""} -> ${voice?.name ?: "standard ${language.toLanguageTag()} voice"}")
 
         // Audio is only cached for the GenAI voice, keyed by its engine name and the style's pauses
         // (speed and pitch are applied on replay), and not for text carrying TtsSpans (the spans
         // change how it is read but not its string).
         val hasSpans = text is Spanned && text.getSpans(0, text.length, TtsSpan::class.java).isNotEmpty()
+        // Google updates its voices with its engine: saved audio from an older engine would sound different.
+        if (synth.engineVersion != prefs.engineVersion) {
+            cache.clear()
+            prefs.engineVersion = synth.engineVersion
+        }
         val key = if (voice != null && prefs.cacheEnabled && !hasSpans) {
-            cache.key(text.toString(), "${voice.name}|${style.sentencePauseMs}|${style.paragraphPauseMs}")
+            cache.key(text.toString(), "${voice.name}|${synth.engineVersion}|${style.sentencePauseMs}|${style.paragraphPauseMs}")
         } else null
         val pieces = splitForPauses(text, style)
 
@@ -185,6 +207,16 @@ class GenAiTtsService : TextToSpeechService() {
             callback.error()
         } finally {
             if (wakeLock.isHeld) wakeLock.release()
+        }
+    }
+
+    /** Downloads [entry] in the background, once per language while the service runs, if the user allows it. */
+    private fun downloadLater(entry: VoiceEntry) {
+        if (!prefs.autoDownload || !downloads.add(entry.locale)) return
+        scope.launch {
+            val ok = GenAiVoices.download(entry.locale, entry.name)
+            Log.d(TAG, "Background download of ${entry.name}: ${if (ok) "done" else "failed"}")
+            if (ok) synth.forget()
         }
     }
 

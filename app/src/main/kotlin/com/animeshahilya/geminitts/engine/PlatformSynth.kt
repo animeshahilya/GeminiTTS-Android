@@ -8,6 +8,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
 import android.util.Log
+import androidx.core.content.pm.PackageInfoCompat
 import java.io.File
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
@@ -49,6 +50,13 @@ class PlatformSynth(context: Context) {
     @Volatile private var tts: TextToSpeech? = null
     @Volatile private var ready = CountDownLatch(1)
     @Volatile private var connected = false
+
+    /**
+     * The engine's version code, read on every (re)connection. Updating Google's engine breaks the connection,
+     * so a newer version shows up here on the next utterance.
+     */
+    @Volatile var engineVersion = 0L
+        private set
     private var currentVoice: Voice? = null
     private var currentLanguage: Locale? = null
     private var sink = File("/dev/null")
@@ -66,6 +74,9 @@ class PlatformSynth(context: Context) {
         val latch = CountDownLatch(1)
         ready = latch
         val pkg = enginePackage
+        engineVersion = pkg?.let { p ->
+            runCatching { PackageInfoCompat.getLongVersionCode(appContext.packageManager.getPackageInfo(p, 0)) }.getOrNull()
+        } ?: 0L
         if (pkg == null) {
             latch.countDown()
             tts = null
@@ -115,7 +126,10 @@ class PlatformSynth(context: Context) {
             .filter { TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED !in it.features }
             .associateBy { it.name.removeSuffix("-local").lowercase() }
         installedAt = now
-        return installed[name.lowercase()]
+        installed[name.lowercase()]?.let { return it }
+        val listed = voices.firstOrNull { it.name.removeSuffix("-local").equals(name, true) }
+        Log.d(TAG, "Voice $name: ${if (listed == null) "not offered by the engine" else "listed but not installed, ${listed.features}"}")
+        return null
     }
 
     /** Re-reads the installed voices on the next lookup, e.g. after one stopped working. */
@@ -154,10 +168,12 @@ class PlatformSynth(context: Context) {
      * request. Speaking one short word right away, audio thrown away, keeps that load off the first
      * real utterance. Any request arriving meanwhile waits for it on [lock].
      */
-    fun warmUp(voiceName: String?, language: Locale) {
+    /** Returns true when the GenAI voice was warmed up, false for the standard voice or a failure. */
+    fun warmUp(voiceName: String?, language: Locale): Boolean {
         val voice = installedVoice(voiceName)
         val result = synthesize("OK", voice, language, { false }) {}
         Log.d(TAG, "Warmed up ${voice?.name ?: "default voice"}: $result")
+        return voice != null && result == Result.DONE
     }
 
     /** Queues the request. Returns its event queue, or null when the engine refused it. */

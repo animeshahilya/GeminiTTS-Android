@@ -20,7 +20,8 @@ the phone.
 - **Works before the first unlock.** Settings and saved phrases live in device-protected storage.
 - **Many languages.** Every language Google offers the GenAI voices in (21, including Hindi, German,
   French, Spanish, Japanese and Arabic). You pick one voice and it is used in every language. Each
-  language downloads on its own from the Languages tab, for its native pronunciation.
+  language is its own small download, for its native pronunciation: it downloads in the background
+  the first time an app reads that language (can be turned off), or from the Languages tab.
 - **Falls back gracefully.** The GenAI voices are multilingual, so a language that isn't downloaded is
   read by your voice in a language that is. Google's standard voice is only used when no GenAI voice
   is downloaded at all.

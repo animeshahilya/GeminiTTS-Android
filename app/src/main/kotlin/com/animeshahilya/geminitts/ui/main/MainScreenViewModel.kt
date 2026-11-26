@@ -13,6 +13,7 @@ import com.animeshahilya.geminitts.data.ReadingStyle
 import com.animeshahilya.geminitts.data.label
 import com.animeshahilya.geminitts.data.TtsPrefs
 import com.animeshahilya.geminitts.data.voiceId
+import com.animeshahilya.geminitts.engine.PlatformSynth
 import com.google.mlkit.genai.common.DownloadStatus
 import com.google.mlkit.genai.common.FeatureStatus
 import com.google.mlkit.genai.texttospeech.VoiceInfo
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 
 sealed interface ModelStatus {
@@ -54,6 +56,7 @@ data class UiState(
     val customStyle: ReadingStyle = ReadingStyle.custom(1f, 1f, 0, 0),
     val rules: List<DictionaryRule> = emptyList(),
     val cacheEnabled: Boolean = true,
+    val autoDownload: Boolean = true,
     val cachedPhrases: Int = 0,
     val cachedBytes: Long = 0
 )
@@ -64,12 +67,16 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
     private val prefs = TtsPrefs(application)
     private val cache = AudioCache.get(application)
     private val client = GenAiVoices.client()
+
+    // Google's own engine, to see which voices it will really speak with.
+    private val google = PlatformSynth(application)
     private var allVoices: List<VoiceInfo> = emptyList()
 
     private val _state = MutableStateFlow(
         UiState(
             rules = prefs.rules,
             cacheEnabled = prefs.cacheEnabled,
+            autoDownload = prefs.autoDownload,
             styleId = prefs.styleId,
             customStyle = prefs.customStyle
         )
@@ -139,19 +146,28 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private suspend fun checkAllStatus() {
+        google.forget()
         for (row in _state.value.languages) {
             val voice = voiceIn(row.locale) ?: continue
-            val status = try {
-                when (client.checkStatus(voice)) {
-                    FeatureStatus.AVAILABLE -> ModelStatus.Ready
-                    FeatureStatus.DOWNLOADABLE -> ModelStatus.NeedsDownload
-                    FeatureStatus.DOWNLOADING -> ModelStatus.Downloading(0)
-                    else -> ModelStatus.Unavailable("Not available on this phone")
-                }
-            } catch (e: Exception) {
-                ModelStatus.Unavailable(e.localizedMessage ?: "Status check failed")
+            setStatus(row.locale, statusOf(voice))
+        }
+    }
+
+    /**
+     * Ready only when Google's engine offers the voice: on a Galaxy S25 Ultra ML Kit reported French and German
+     * as downloaded while Google still refused them as not installed.
+     */
+    private suspend fun statusOf(voice: VoiceInfo): ModelStatus {
+        if (withContext(Dispatchers.IO) { google.installedVoice(voice.name) } != null) return ModelStatus.Ready
+        return try {
+            when (client.checkStatus(voice)) {
+                FeatureStatus.AVAILABLE -> ModelStatus.Unavailable("downloaded, but Google can't use it yet")
+                FeatureStatus.DOWNLOADABLE -> ModelStatus.NeedsDownload
+                FeatureStatus.DOWNLOADING -> ModelStatus.Downloading(0)
+                else -> ModelStatus.Unavailable("not available on this phone")
             }
-            setStatus(row.locale, status)
+        } catch (e: Exception) {
+            ModelStatus.Unavailable(e.localizedMessage ?: "status check failed")
         }
     }
 
@@ -169,7 +185,10 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
                 client.download(voice).collect { status ->
                     when (status) {
                         is DownloadStatus.DownloadProgress -> setStatus(locale, ModelStatus.Downloading(status.totalBytesDownloaded))
-                        is DownloadStatus.DownloadCompleted -> setStatus(locale, ModelStatus.Ready)
+                        is DownloadStatus.DownloadCompleted -> {
+                            google.forget()
+                            setStatus(locale, statusOf(voice))
+                        }
                         is DownloadStatus.DownloadFailed ->
                             setStatus(locale, ModelStatus.Unavailable(status.e.localizedMessage ?: "Download failed"))
                         else -> Unit
@@ -224,6 +243,11 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
         _state.update { it.copy(isDefaultEngine = tts.defaultEngine == app.packageName) }
     }
 
+    fun setAutoDownload(enabled: Boolean) {
+        prefs.autoDownload = enabled
+        _state.update { it.copy(autoDownload = enabled) }
+    }
+
     fun setCacheEnabled(enabled: Boolean) {
         prefs.cacheEnabled = enabled
         _state.update { it.copy(cacheEnabled = enabled) }
@@ -262,6 +286,7 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
 
     override fun onCleared() {
         tts.shutdown()
+        google.shutdown()
         client.close()
     }
 }

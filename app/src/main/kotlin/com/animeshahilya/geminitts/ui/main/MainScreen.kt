@@ -227,21 +227,12 @@ private fun VoiceTab(state: UiState, viewModel: MainScreenViewModel) {
     }
 
     SectionTitle("Saved audio")
-    Row(
-        Modifier.fillMaxWidth()
-            .toggleable(value = state.cacheEnabled, onValueChange = viewModel::setCacheEnabled, role = Role.Switch)
-            .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text("Remember spoken phrases")
-            Text(
-                "Phrases you hear often start instantly. Uses up to 64 MB.",
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-        Switch(checked = state.cacheEnabled, onCheckedChange = null)
-    }
+    SwitchRow(
+        "Remember spoken phrases",
+        "Phrases you hear often start instantly. Uses up to 64 MB. Cleared when Google updates its voices.",
+        state.cacheEnabled,
+        viewModel::setCacheEnabled
+    )
     Text("${state.cachedPhrases} phrases saved, ${"%.1f".format(Locale.ROOT, state.cachedBytes / (1024f * 1024f))} MB")
     OutlinedButton(onClick = viewModel::clearCache, enabled = state.cachedPhrases > 0) { Text("Clear saved audio") }
 }
@@ -250,8 +241,15 @@ private fun VoiceTab(state: UiState, viewModel: MainScreenViewModel) {
 private fun LanguagesTab(state: UiState, viewModel: MainScreenViewModel) {
     SectionTitle("Languages")
     Text(
-        "Apps switch language as they read. A language that isn't downloaded uses the phone's standard voice for it.",
+        "Apps switch language as they read. Until a language is downloaded, your voice reads it with another " +
+            "downloaded language's rules, or the phone's standard voice when none is.",
         style = MaterialTheme.typography.bodySmall
+    )
+    SwitchRow(
+        "Download languages automatically",
+        "The first time an app reads a language, its voice downloads in the background.",
+        state.autoDownload,
+        viewModel::setAutoDownload
     )
     if (state.loading) Text("Looking for languages…")
     state.languages.forEach { row ->
@@ -395,4 +393,20 @@ private fun AboutTab() {
     Button(onClick = {
         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, FEEDBACK_LINK.toUri())) }
     }) { Text("Join adev ally on WhatsApp") }
+}
+
+@Composable
+private fun SwitchRow(title: String, summary: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth()
+            .toggleable(value = checked, onValueChange = onChange, role = Role.Switch)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title)
+            Text(summary, style = MaterialTheme.typography.bodySmall)
+        }
+        Switch(checked = checked, onCheckedChange = null)
+    }
 }
