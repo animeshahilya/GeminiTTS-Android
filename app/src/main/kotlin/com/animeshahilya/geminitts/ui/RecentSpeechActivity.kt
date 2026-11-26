@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PersistableBundle
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.text.format.DateUtils
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -57,13 +58,32 @@ class RecentSpeechActivity : ComponentActivity() {
     private var tts: TextToSpeech? = null
     @Volatile private var ttsReady = false
     @Volatile private var pendingAction: (() -> Unit)? = null
+    private val speakingState = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         tts = TextToSpeech(this, { status ->
             ttsReady = status == TextToSpeech.SUCCESS
-            if (ttsReady) pendingAction?.also { pendingAction = null }.let { it?.invoke() }
-        }, packageName)
+            if (ttsReady) pendingAction?.also { pendingAction = null }?.invoke()
+        }, packageName).apply {
+            setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) {
+                    speakingState.value = true
+                }
+                override fun onDone(utteranceId: String?) {
+                    if (utteranceId == "recent_speech" || utteranceId == "recent_spell_last") {
+                        speakingState.value = false
+                    }
+                }
+                @Deprecated("Deprecated in Java")
+                override fun onError(utteranceId: String?) {
+                    speakingState.value = false
+                }
+                override fun onStop(utteranceId: String?, interrupted: Boolean) {
+                    speakingState.value = false
+                }
+            })
+        }
         val beforeMs = intent.getLongExtra(EXTRA_OPENED_AT_MS, Long.MAX_VALUE)
         setContent {
             GeminiTtsTheme {
@@ -83,6 +103,12 @@ class RecentSpeechActivity : ComponentActivity() {
         return km.isDeviceLocked || km.isKeyguardLocked
     }
 
+    private fun stopSpeech() {
+        pendingAction = null
+        speakingState.value = false
+        tts?.stop()
+    }
+
     @Composable
     private fun RecentSpeechDialog(beforeMs: Long) {
         val prefs = remember { TtsPrefs(this) }
@@ -91,6 +117,7 @@ class RecentSpeechActivity : ComponentActivity() {
         var items by remember { mutableStateOf(if (isLocked) emptyList() else RecentSpeech.items(now, beforeMs)) }
         var selected by remember { mutableStateOf<RecentSpeech.Item?>(null) }
         var spellNotice by remember { mutableStateOf<String?>(null) }
+        val isSpeaking by speakingState
 
         LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
             val lockedNow = checkLocked()
@@ -99,10 +126,11 @@ class RecentSpeechActivity : ComponentActivity() {
             now = t
             items = if (lockedNow) emptyList() else RecentSpeech.items(t, beforeMs)
         }
+        LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { stopSpeech() }
 
         if (selected == null) {
             AlertDialog(
-                onDismissRequest = { finish() },
+                onDismissRequest = { stopSpeech(); finish() },
                 title = { Text("Recent speech", modifier = Modifier.semantics { heading() }) },
                 text = {
                     when {
@@ -130,16 +158,16 @@ class RecentSpeechActivity : ComponentActivity() {
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = { finish() }) { Text("Close") }
+                    TextButton(onClick = { stopSpeech(); finish() }) { Text("Close") }
                 },
                 dismissButton = if (items.isNotEmpty()) {
-                    { TextButton(onClick = { RecentSpeech.clear(); finish() }) { Text("Clear") } }
+                    { TextButton(onClick = { stopSpeech(); RecentSpeech.clear(); finish() }) { Text("Clear") } }
                 } else null
             )
         } else {
             val item = selected!!
             AlertDialog(
-                onDismissRequest = { selected = null; spellNotice = null },
+                onDismissRequest = { stopSpeech(); selected = null; spellNotice = null },
                 title = { Text(shorten(item.text), modifier = Modifier.semantics { heading() }) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -151,12 +179,17 @@ class RecentSpeechActivity : ComponentActivity() {
                         }
                         OutlinedButton(
                             onClick = {
-                                val truncated = spellWhenReady(item.text)
+                                val truncated = spellWhenReady(item.text, prefs)
                                 spellNotice = if (truncated) "Spelling first $MAX_SPELL_CHARS characters." else null
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text("Spell character by character")
+                        }
+                        if (isSpeaking) {
+                            OutlinedButton(onClick = ::stopSpeech, modifier = Modifier.fillMaxWidth()) {
+                                Text("Stop speaking")
+                            }
                         }
                         OutlinedButton(onClick = { copyText(item.text) }, modifier = Modifier.fillMaxWidth()) {
                             Text("Copy text")
@@ -172,9 +205,9 @@ class RecentSpeechActivity : ComponentActivity() {
                 },
                 confirmButton = {
                     Row {
-                        TextButton(onClick = { selected = null; spellNotice = null }) { Text("Back") }
+                        TextButton(onClick = { stopSpeech(); selected = null; spellNotice = null }) { Text("Back") }
                         Spacer(Modifier.padding(4.dp))
-                        TextButton(onClick = { finish() }) { Text("Close") }
+                        TextButton(onClick = { stopSpeech(); finish() }) { Text("Close") }
                     }
                 }
             )
@@ -187,35 +220,49 @@ class RecentSpeechActivity : ComponentActivity() {
 
     private fun speak(text: String, rate: Float) {
         val engine = tts ?: return
+        speakingState.value = true
         engine.setSpeechRate(rate)
         engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "recent_speech")
         engine.setSpeechRate(1f)
     }
 
-    private fun spellWhenReady(text: String): Boolean {
-        val chars = BreakIterator.getCharacterInstance()
-        chars.setText(text)
-        var total = 0
-        while (chars.next() != BreakIterator.DONE) total++
-        runWhenReady { spell(text) }
-        return total > MAX_SPELL_CHARS
+    private fun spellWhenReady(text: String, prefs: TtsPrefs): Boolean {
+        val (tokens, truncated) = collectSpellTokens(text, prefs)
+        runWhenReady { spell(tokens) }
+        return truncated
     }
 
-    private fun spell(text: String) {
-        val engine = tts ?: return
-        engine.stop()
+    private fun collectSpellTokens(text: String, prefs: TtsPrefs): Pair<List<String>, Boolean> {
+        val dict = prefs.dictionary
+        val langTag = java.util.Locale.getDefault().toLanguageTag()
         val chars = BreakIterator.getCharacterInstance()
         chars.setText(text)
+        val out = ArrayList<String>()
         var start = chars.first()
         var end = chars.next()
-        var count = 0
-        while (end != BreakIterator.DONE && count < MAX_SPELL_CHARS) {
+        while (end != BreakIterator.DONE && out.size < MAX_SPELL_CHARS) {
             val ch = text.substring(start, end)
-            if (ch.isBlank()) engine.playSilentUtterance(250L, TextToSpeech.QUEUE_ADD, null)
-            else engine.speak(ch, TextToSpeech.QUEUE_ADD, null, "recent_spell")
+            val mappedByDict = dict.apply(ch, langTag).toString() != ch
+            out += if (mappedByDict) ch else spokenSpellToken(ch)
             start = end
             end = chars.next()
-            count++
+        }
+        return out to (end != BreakIterator.DONE)
+    }
+
+    private fun spell(tokens: List<String>) {
+        val engine = tts ?: return
+        engine.stop()
+        if (tokens.isEmpty()) return
+        speakingState.value = true
+        for (i in tokens.indices) {
+            val token = tokens[i]
+            val id = if (i == tokens.lastIndex) "recent_spell_last" else "recent_spell"
+            if (token.isBlank()) {
+                engine.playSilentUtterance(250L, TextToSpeech.QUEUE_ADD, id)
+            } else {
+                engine.speak(token, TextToSpeech.QUEUE_ADD, null, id)
+            }
         }
     }
 
@@ -240,5 +287,47 @@ class RecentSpeechActivity : ComponentActivity() {
     companion object {
         const val EXTRA_OPENED_AT_MS = "opened_at_ms"
         private const val MAX_SPELL_CHARS = 300
+
+        private val SPELL_SYMBOLS = mapOf(
+            "." to "dot",
+            "," to "comma",
+            ":" to "colon",
+            ";" to "semicolon",
+            "-" to "dash",
+            "_" to "underscore",
+            "/" to "slash",
+            "\\" to "backslash",
+            "@" to "at",
+            "!" to "exclamation mark",
+            "?" to "question mark",
+            "(" to "left parenthesis",
+            ")" to "right parenthesis",
+            "[" to "left bracket",
+            "]" to "right bracket",
+            "{" to "left brace",
+            "}" to "right brace",
+            "*" to "star",
+            "#" to "hash",
+            "+" to "plus",
+            "=" to "equals",
+            "&" to "and",
+            "%" to "percent",
+            "$" to "dollar",
+            "\"" to "quote",
+            "'" to "apostrophe",
+            "~" to "tilde",
+            "`" to "backtick",
+            "|" to "pipe",
+            "<" to "less than",
+            ">" to "greater than"
+        )
+
+        /** Maps raw punctuation (which GenAI voices skip) and uppercase ASCII letters to spoken tokens. */
+        fun spokenSpellToken(ch: String): String {
+            if (ch.isBlank()) return ch
+            SPELL_SYMBOLS[ch]?.let { return it }
+            if (ch.length == 1 && ch[0] in 'A'..'Z') return "capital $ch"
+            return ch
+        }
     }
 }

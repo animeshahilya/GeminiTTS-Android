@@ -104,5 +104,16 @@ class TextPipelineAndNumberTest {
             "See link bank.in slash userProfile slash 123456",
             TextPipeline.process("See https://bank.in/userProfile/123456", full, emptyDict).toString()
         )
+
+        // Long bank SMS OTP lookback (~60 chars) matches inside sentence, +91 phone prefix stays intact,
+        // and cross-sentence codes are not triggered.
+        assertEquals(
+            "Your OTP for 125000 rupees order placed at Merchant is 8 4 9 2 0 1",
+            TextPipeline.process("Your OTP for Rs 125000 order placed at Merchant is 849201", full, emptyDict).toString()
+        )
+        assertEquals(
+            "Use OTP 4 8 2 9 1 0 or call +919876543210",
+            TextPipeline.process("Use OTP 482910 or call +919876543210", full.copy(digitGrouping = DigitGroupingMode.OFF), emptyDict).toString()
+        )
     }
 }

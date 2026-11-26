@@ -13,19 +13,19 @@ object NumberReading {
         """(?iu)(?<![\p{L}])(otp|one[- ]time|pin|passcode|password|code|cvv|cvv2|pnr|token|txn|transaction|ref|reference|a/c|acct|account|card|id|serial|auth|2fa|iban|swift|verification|verify|код|кода|коду|кодом|пин|пароль|пароля|карта|карты|ओटीपी|कोड|पिन|पासवर्ड|खाता)(?![\p{L}])"""
     )
     private val CODE_RUN = Regex(
-        """(?<![\p{L}\d.,:/$€£¥₹-])([Xx*•]{2,})?(\d{2,}(?:[ -]\d{2,})*)(?![\d.,:%/]?\d)(?![\p{L}%])"""
+        """(?<![\p{L}\d.,:/$€£¥₹+\-])([Xx*•]{2,})?(\d{2,}(?:[ -]\d{2,})*)(?![\d.,:%/]?\d)(?![\p{L}%])"""
     )
     private val MONEY_BEFORE = Regex("""(?i)(?:[$€£¥₹]|(?<![\p{L}])(?:rs\.?|re\.?|inr|usd|eur|gbp|jpy))\s*$""")
     private val MONEY_AFTER = Regex("""(?iu)^\s*(?:[€¥₹$£]|(?:rs|rupees?|dollars?|euros?|pounds?|yen|usd|inr|eur|gbp|jpy|paise|cents?)(?![\p{L}]))""")
 
-    private val LEADING_ZERO = Regex("""(?<![\p{L}\d.,:/\-])(0\d+)(?![\d.,:/\-])""")
+    private val LEADING_ZERO = Regex("""(?<![\p{L}\d.,:/+\-])(0\d+)(?![\d.,:/\-])""")
 
     private val INDIAN_COMMAS = Regex("""\b(\d{1,2}(?:,\d{2})+),(\d{3})\b""")
     private val INDIAN_CURRENCY = Regex("""(?i)(?:₹\s*|\b(?:Rs\.?|Re\.?|INR)\s*)([0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?)(?:\s*(k|l|lac|lakhs?|cr|crores?))?\b(?:\s*(?:/-|/=|--))?""")
     private val SHORTHAND_LAKH = Regex("""\b(\d+(?:\.\d+)?)\s*(?:L|(?i:lac|lakhs?))\b""")
     private val SHORTHAND_CRORE = Regex("""(?i)\b(\d+(?:\.\d+)?)\s*(?:cr|crore|crores)\b""")
 
-    private val DIGIT_RUN = Regex("""(?<![\p{L}\d.,:/\-$€£¥₹])\d+(?![\d.,:/\-]|(?:st|nd|rd|th)\b)""", RegexOption.IGNORE_CASE)
+    private val DIGIT_RUN = Regex("""(?<![\p{L}\d.,:/+$€£¥₹\-])\d+(?![\d.,:/\-]|(?:st|nd|rd|th)\b)""", RegexOption.IGNORE_CASE)
     private val PRECEDING_ENDING = Regex("""(?i)\b(?:ending|last)\s+$""")
 
     /** Converts OTPs/PINs/masked card suffixes near keywords to spaced digits. */
@@ -158,7 +158,7 @@ object NumberReading {
     }
 
     private fun keywordNear(text: CharSequence, start: Int, end: Int): Boolean {
-        var from = (start - 40).coerceAtLeast(0)
+        var from = (start - 72).coerceAtLeast(0)
         for (i in start - 1 downTo from) {
             if (text[i] in ".!?\n।") {
                 from = i + 1

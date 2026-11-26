@@ -385,9 +385,10 @@ fun DictionaryTab(
     var search by rememberSaveable { mutableStateOf("") }
     var filterMode by rememberSaveable { mutableIntStateOf(0) }
     var editingRule by remember { mutableStateOf<Pair<DictionaryRule?, DictionaryRule>?>(null) }
+    var showTester by rememberSaveable { mutableStateOf(false) }
     var testPhrase by rememberSaveable { mutableStateOf("") }
 
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(
             onClick = { editingRule = null to DictionaryRule("", "") },
             modifier = Modifier.defaultMinSize(minHeight = 48.dp)
@@ -406,7 +407,11 @@ fun DictionaryTab(
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             listOf("All", "Words", "Single char").forEachIndexed { idx, label ->
                 FilterChip(
                     selected = filterMode == idx,
@@ -415,19 +420,25 @@ fun DictionaryTab(
                     modifier = Modifier.defaultMinSize(minHeight = 48.dp)
                 )
             }
+            TextButton(
+                onClick = { showTester = !showTester },
+                modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+            ) { Text(if (showTester) "Hide test" else "Test") }
         }
-        OutlinedTextField(
-            value = testPhrase,
-            onValueChange = { testPhrase = it },
-            label = { Text("Test dictionary on phrase") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-        if (testPhrase.isNotBlank()) {
-            val out = remember(testPhrase, state.rules, state.testLocale) {
-                viewModel.previewTextTransform(testPhrase, useDictionaryOnly = true)
+        if (showTester) {
+            OutlinedTextField(
+                value = testPhrase,
+                onValueChange = { testPhrase = it },
+                label = { Text("Test dictionary on phrase") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            if (testPhrase.isNotBlank()) {
+                val out = remember(testPhrase, state.rules, state.testLocale) {
+                    viewModel.previewTextTransform(testPhrase, useDictionaryOnly = true)
+                }
+                Text("Result: $out", style = MaterialTheme.typography.bodySmall, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
             }
-            Text("Result: $out", style = MaterialTheme.typography.bodySmall, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
         }
     }
 

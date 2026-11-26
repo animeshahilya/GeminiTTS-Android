@@ -78,8 +78,13 @@ class DictionaryAndBackupTest {
         assertEquals(rules, reimported)
     }
 
-    @Test fun recentSpeechBeforeCutoffAndClearedCleanly() {
+    @Test fun recentSpeechBeforeCutoffAndSpokenSpellTokens() {
         RecentSpeech.clear()
         assertTrue(RecentSpeech.items(nowMs = 2000L, beforeMs = 1500L).isEmpty())
+        assertEquals("capital A", com.animeshahilya.geminitts.ui.RecentSpeechActivity.spokenSpellToken("A"))
+        assertEquals("a", com.animeshahilya.geminitts.ui.RecentSpeechActivity.spokenSpellToken("a"))
+        assertEquals("dot", com.animeshahilya.geminitts.ui.RecentSpeechActivity.spokenSpellToken("."))
+        assertEquals("underscore", com.animeshahilya.geminitts.ui.RecentSpeechActivity.spokenSpellToken("_"))
+        assertEquals("at", com.animeshahilya.geminitts.ui.RecentSpeechActivity.spokenSpellToken("@"))
     }
 }
