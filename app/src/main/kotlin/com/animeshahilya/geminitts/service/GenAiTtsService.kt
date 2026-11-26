@@ -221,7 +221,7 @@ class GenAiTtsService : TextToSpeechService() {
         )
 
         val hasSpans = text is Spanned && text.getSpans(0, text.length, TtsSpan::class.java).isNotEmpty()
-        if (synth.engineVersion != prefs.engineVersion) {
+        if (synth.engineVersion != 0L && synth.engineVersion != prefs.engineVersion) {
             cache.clear()
             prefs.engineVersion = synth.engineVersion
         }
@@ -319,7 +319,10 @@ class GenAiTtsService : TextToSpeechService() {
                 }
             }
             if (result != PlatformSynth.Result.DONE) break
-            if (pauseMs > 0 && out.started) emit(ByteArray(sampleRate * channels * 2 / 1000 * pauseMs))
+            if (pauseMs > 0 && out.started) {
+                val pauseFrames = (sampleRate.toLong() * pauseMs / 1000L).toInt().coerceAtLeast(0)
+                if (pauseFrames > 0) emit(ByteArray(pauseFrames * channels * 2))
+            }
         }
         Log.d(
             TAG, "${voice?.name ?: "default voice"}: $result, ${pieces.size} piece(s), first audio $firstAudioMs ms, " +
@@ -349,7 +352,7 @@ class GenAiTtsService : TextToSpeechService() {
             is String -> v.toFloatOrNull() ?: 1f
             else -> 1f
         }
-        return parsed.coerceIn(0f, 1f)
+        return if (parsed.isFinite()) parsed.coerceIn(0f, 1f) else 1f
     }
 
     private fun wholeTextLocale(cs: CharSequence): Locale? {

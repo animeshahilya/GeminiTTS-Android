@@ -10,7 +10,7 @@ package com.animeshahilya.geminitts.data
 object NumberReading {
 
     private val CODE_KEYWORD = Regex(
-        """(?iu)(?<![\p{L}])(otp|one[- ]time|pin|passcode|password|code|cvv|cvv2|pnr|token|txn|transaction|ref|reference|a/c|acct|account|card|id|serial|auth|2fa|iban|swift|verification|verify|код|кода|коду|кодом|пин|пароль|пароля|карта|карты|ओटीपी|कोड|पिन|पासवर्ड|खाता)(?![\p{L}])"""
+        """(?iu)(?<![\p{L}\p{M}])(otp|one[- ]time|pin|passcode|password|code|cvv|cvv2|pnr|token|txn|transaction|ref|reference|a/c|acct|account|card|id|serial|auth|2fa|iban|swift|verification|verify|код|кода|коду|кодом|пин|пароль|пароля|карта|карты|ओटीपी|कोड|पिन|पासवर्ड|खाता)(?![\p{L}\p{M}])"""
     )
     private val CODE_RUN = Regex(
         """(?<![\p{L}\d.,:/$€£¥₹+\-])([Xx*•]{2,})?(\d{2,}(?:[ -]\d{2,})*)(?![\d.,:%/]?\d)(?![\p{L}%])"""

@@ -260,8 +260,11 @@ internal fun Map<String, Any?>.int(key: String, default: Int): Int = when (val v
     else -> default
 }
 
-internal fun Map<String, Any?>.float(key: String, default: Float): Float = when (val v = this[key]) {
-    is Number -> v.toFloat()
-    is String -> v.toFloatOrNull() ?: default
-    else -> default
+internal fun Map<String, Any?>.float(key: String, default: Float): Float {
+    val parsed = when (val v = this[key]) {
+        is Number -> v.toFloat()
+        is String -> v.toFloatOrNull() ?: default
+        else -> default
+    }
+    return if (parsed.isFinite()) parsed else default
 }

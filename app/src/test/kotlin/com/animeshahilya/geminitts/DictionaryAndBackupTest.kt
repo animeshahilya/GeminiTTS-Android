@@ -86,5 +86,11 @@ class DictionaryAndBackupTest {
         assertEquals("dot", com.animeshahilya.geminitts.ui.RecentSpeechActivity.spokenSpellToken("."))
         assertEquals("underscore", com.animeshahilya.geminitts.ui.RecentSpeechActivity.spokenSpellToken("_"))
         assertEquals("at", com.animeshahilya.geminitts.ui.RecentSpeechActivity.spokenSpellToken("@"))
+
+        val badFloatMap = mapOf<String, Any?>("localeTag" to "en-US", "speed" to "NaN", "pitch" to Double.NaN)
+        val lo = com.animeshahilya.geminitts.data.LanguageOverride.fromMap(badFloatMap)
+        assertNotNull(lo)
+        assertTrue(lo!!.speed.isFinite() && lo.pitch.isFinite())
+        assertEquals(1f, lo.speed, 0.001f)
     }
 }

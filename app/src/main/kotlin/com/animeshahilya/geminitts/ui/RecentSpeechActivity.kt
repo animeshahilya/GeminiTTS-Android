@@ -58,6 +58,8 @@ class RecentSpeechActivity : ComponentActivity() {
     private var tts: TextToSpeech? = null
     @Volatile private var ttsReady = false
     @Volatile private var pendingAction: (() -> Unit)? = null
+    @Volatile private var activeBatchPrefix: String = ""
+    private var batchSeq = 0L
     private val speakingState = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -68,19 +70,21 @@ class RecentSpeechActivity : ComponentActivity() {
         }, packageName).apply {
             setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {
-                    speakingState.value = true
+                    if (utteranceId != null && utteranceId.startsWith(activeBatchPrefix) && activeBatchPrefix.isNotEmpty()) {
+                        speakingState.value = true
+                    }
                 }
                 override fun onDone(utteranceId: String?) {
-                    if (utteranceId == "recent_speech" || utteranceId == "recent_spell_last") {
+                    if (utteranceId == "${activeBatchPrefix}speech" || utteranceId == "${activeBatchPrefix}spell_last") {
                         speakingState.value = false
                     }
                 }
                 @Deprecated("Deprecated in Java")
                 override fun onError(utteranceId: String?) {
-                    speakingState.value = false
+                    if (utteranceId != null && utteranceId.startsWith(activeBatchPrefix)) speakingState.value = false
                 }
                 override fun onStop(utteranceId: String?, interrupted: Boolean) {
-                    speakingState.value = false
+                    if (utteranceId != null && utteranceId.startsWith(activeBatchPrefix)) speakingState.value = false
                 }
             })
         }
@@ -105,6 +109,7 @@ class RecentSpeechActivity : ComponentActivity() {
 
     private fun stopSpeech() {
         pendingAction = null
+        activeBatchPrefix = ""
         speakingState.value = false
         tts?.stop()
     }
@@ -220,9 +225,11 @@ class RecentSpeechActivity : ComponentActivity() {
 
     private fun speak(text: String, rate: Float) {
         val engine = tts ?: return
+        val prefix = "b${++batchSeq}_"
+        activeBatchPrefix = prefix
         speakingState.value = true
         engine.setSpeechRate(rate)
-        engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "recent_speech")
+        engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "${prefix}speech")
         engine.setSpeechRate(1f)
     }
 
@@ -252,12 +259,14 @@ class RecentSpeechActivity : ComponentActivity() {
 
     private fun spell(tokens: List<String>) {
         val engine = tts ?: return
+        val prefix = "b${++batchSeq}_"
+        activeBatchPrefix = prefix
         engine.stop()
         if (tokens.isEmpty()) return
         speakingState.value = true
         for (i in tokens.indices) {
             val token = tokens[i]
-            val id = if (i == tokens.lastIndex) "recent_spell_last" else "recent_spell"
+            val id = if (i == tokens.lastIndex) "${prefix}spell_last" else "${prefix}spell"
             if (token.isBlank()) {
                 engine.playSilentUtterance(250L, TextToSpeech.QUEUE_ADD, id)
             } else {

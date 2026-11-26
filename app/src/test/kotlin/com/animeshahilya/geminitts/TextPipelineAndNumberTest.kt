@@ -115,5 +115,10 @@ class TextPipelineAndNumberTest {
             "Use OTP 4 8 2 9 1 0 or call +919876543210",
             TextPipeline.process("Use OTP 482910 or call +919876543210", full.copy(digitGrouping = DigitGroupingMode.OFF), emptyDict).toString()
         )
+        // Devanagari word ending in combining matra ("कोडी") must not falsely trigger "कोड".
+        assertEquals(
+            "कोडी 482910",
+            TextPipeline.process("कोडी 482910", full.copy(digitGrouping = DigitGroupingMode.OFF), emptyDict, "hi-IN").toString()
+        )
     }
 }

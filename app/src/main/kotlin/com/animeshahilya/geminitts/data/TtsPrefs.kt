@@ -20,8 +20,8 @@ class TtsPrefs(context: Context) {
     /** The chosen voice ("star02"), used in every language; null means each language's first voice. */
     var voiceId: String?
         // Older versions stored a full name ("en-us-x-star02"); voiceId() reduces either form.
-        get() = prefs.getString(KEY_VOICE, null)?.let(::voiceId)
-        set(value) = prefs.edit { putString(KEY_VOICE, value) }
+        get() = prefs.getString(KEY_VOICE, null)?.takeIf { it.isNotBlank() }?.let(::voiceId)
+        set(value) = prefs.edit { putString(KEY_VOICE, value?.takeIf { it.isNotBlank() }) }
 
     var cacheEnabled: Boolean
         get() = prefs.getBoolean(KEY_CACHE, true)

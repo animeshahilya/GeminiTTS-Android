@@ -107,6 +107,9 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
 
     private var startedAt = 0L
     private var firstAudioSeen = false
+    private var utteranceSeq = 0L
+    @Volatile private var activeUtteranceId: String? = null
+    @Volatile private var activeIsTest = false
     @Volatile private var ttsReady = false
     @Volatile private var pendingTtsAction: (() -> Unit)? = null
     private val tts: TextToSpeech = TextToSpeech(application, { status ->
@@ -117,15 +120,21 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
         setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(id: String?) {}
             override fun onAudioAvailable(id: String?, audio: ByteArray?) {
-                if (id == "test" && !firstAudioSeen) {
+                if (id == activeUtteranceId && activeIsTest && !firstAudioSeen) {
                     firstAudioSeen = true
                     _state.update { it.copy(firstAudioMs = SystemClock.elapsedRealtime() - startedAt) }
                 }
             }
-            override fun onDone(id: String?) = finished(id == "test")
+            override fun onDone(id: String?) {
+                if (id == activeUtteranceId) finished(activeIsTest)
+            }
             @Deprecated("Deprecated in Java")
-            override fun onError(id: String?) = finished(false)
-            override fun onStop(id: String?, interrupted: Boolean) = finished(false)
+            override fun onError(id: String?) {
+                if (id == activeUtteranceId) finished(false)
+            }
+            override fun onStop(id: String?, interrupted: Boolean) {
+                if (id == activeUtteranceId) finished(false)
+            }
         })
     }
 
@@ -442,7 +451,11 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private fun speakWhenReady(locale: Locale, voiceName: String?, text: String, utteranceId: String) {
+        val uniqueId = "${utteranceId}_${++utteranceSeq}"
+        val isTest = utteranceId == "test"
         val action: () -> Unit = {
+            activeUtteranceId = uniqueId
+            activeIsTest = isTest
             val ttsVoice = voiceName?.let { name ->
                 runCatching { tts.voices?.firstOrNull { it.name == name } }.getOrNull()
             }
@@ -450,7 +463,7 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
             if (ttsVoice != null) tts.voice = ttsVoice
             tts.setSpeechRate(1f)
             tts.setPitch(1f)
-            if (tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId) != TextToSpeech.SUCCESS) {
+            if (tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, uniqueId) != TextToSpeech.SUCCESS) {
                 finished(false)
             }
         }
@@ -459,6 +472,8 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
 
     fun stop() {
         pendingTtsAction = null
+        activeUtteranceId = null
+        activeIsTest = false
         tts.stop()
         _state.update { it.copy(speaking = false, previewingVoiceId = null) }
     }
@@ -538,11 +553,25 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    private fun readBoundedText(uri: Uri, maxChars: Int = BackupRestore.MAX_IMPORT_CHARS): String {
+        val stream = app.contentResolver.openInputStream(uri) ?: error("Could not read selected file.")
+        return stream.bufferedReader().use { reader ->
+            val sb = StringBuilder()
+            val buf = CharArray(8192)
+            while (true) {
+                val n = reader.read(buf)
+                if (n <= 0) break
+                if (sb.length + n > maxChars) error("Selected file exceeds 5 MB limit.")
+                sb.append(buf, 0, n)
+            }
+            sb.toString()
+        }
+    }
+
     fun importBackupFromUri(uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
-                val raw = app.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-                    ?: error("Could not read backup file.")
+                val raw = readBoundedText(uri)
                 BackupRestore.importBackupJson(prefs, raw)
             }.onSuccess { result ->
                 val msg = if (result.skippedRules > 0) {
@@ -576,8 +605,7 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
     fun importNvdaDicFromUri(uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
-                val raw = app.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-                    ?: error("Could not read .dic file.")
+                val raw = readBoundedText(uri)
                 val imported = BackupRestore.parseNvdaDic(raw)
                 val merged = (prefs.rules.filterNot { existing ->
                     imported.any { it.pattern == existing.pattern && it.language == existing.language }

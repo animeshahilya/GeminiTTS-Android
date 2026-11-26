@@ -121,7 +121,7 @@ fun FactorSlider(
     val shown = "%.2fx".format(Locale.ROOT, clamped)
     fun snap(v: Float): Float {
         val stepped = ((v / step).roundToInt() * step).coerceIn(range.start, range.endInclusive)
-        return (stepped * 100f).roundToInt() / 100f
+        return (stepped * 1000f).roundToInt() / 1000f
     }
     StepSliderRow(
         label = label,

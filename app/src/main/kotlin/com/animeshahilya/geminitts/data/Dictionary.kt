@@ -97,24 +97,20 @@ class Dictionary(rules: List<DictionaryRule>) {
     fun apply(
         text: CharSequence,
         languageTag: String = "",
-        isSingleChar: Boolean = TextPipeline.isSingleCharacter(text)
+        isSingleChar: Boolean? = null
     ): CharSequence {
         if (charRules.isEmpty() && textRules.isEmpty()) return text
         val editor = SpanEditor(text)
 
-        if (isSingleChar && charRules.isNotEmpty()) {
+        val single = if (charRules.isEmpty()) false else (isSingleChar ?: TextPipeline.isSingleCharacter(text))
+        if (single) {
             val trimmed = text.toString().trim()
             for (c in charRules) {
                 if (!c.rule.appliesToLanguage(languageTag)) continue
-                val matched = if (c.regex != null) {
-                    c.regex.matchEntire(trimmed) != null
-                } else {
-                    trimmed.equals(c.rule.pattern, ignoreCase = !c.rule.caseSensitive)
-                }
+                val regexMatch = c.regex?.matchEntire(trimmed)
+                val matched = if (c.regex != null) regexMatch != null else trimmed.equals(c.rule.pattern, ignoreCase = !c.rule.caseSensitive)
                 if (matched) {
-                    val repl = if (c.regex != null) {
-                        c.regex.matchEntire(trimmed)?.let { expand(c.rule.replacement, it) } ?: c.rule.replacement
-                    } else c.rule.replacement
+                    val repl = if (regexMatch != null) expand(c.rule.replacement, regexMatch) else c.rule.replacement
                     editor.replaceRange(0, text.length, repl, protectTtsSpans = true)
                     return editor.result()
                 }
