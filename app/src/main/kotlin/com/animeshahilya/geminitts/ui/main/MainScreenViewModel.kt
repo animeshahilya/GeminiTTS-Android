@@ -131,7 +131,6 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
 
     init {
         refreshCacheStats()
-        refreshApps()
         viewModelScope.launch {
             allVoices = try {
                 GenAiVoices.fetch(app, client)
@@ -380,9 +379,10 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun applyPreset(preset: VoicePreset) {
+        val voiceChanged = preset.voiceId != _state.value.selectedVoice
         prefs.applyPreset(preset)
         syncPrefsToState("Applied preset '${preset.name}'.")
-        viewModelScope.launch { checkAllStatus() }
+        if (voiceChanged) viewModelScope.launch { checkAllStatus() }
     }
 
     private fun syncPrefsToState(message: String?) {
@@ -477,7 +477,6 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
     fun refreshEngineCheck() {
         syncPrefsToState(_state.value.statusMessage)
         _state.update { it.copy(isDefaultEngine = tts.defaultEngine == app.packageName) }
-        refreshApps()
     }
 
     fun setAutoDownload(enabled: Boolean) {

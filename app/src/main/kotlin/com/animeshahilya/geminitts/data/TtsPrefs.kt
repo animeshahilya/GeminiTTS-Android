@@ -136,8 +136,10 @@ class TtsPrefs(context: Context) {
         }
 
     fun languageOverrideFor(locale: Locale): LanguageOverride? {
+        val map = languageOverrides
+        if (map.isEmpty()) return null
         val tag = locale.toLanguageTag()
-        return languageOverrides[tag] ?: languageOverrides.values.firstOrNull {
+        return map[tag] ?: map.values.firstOrNull {
             it.localeTag.equals(tag, ignoreCase = true)
         }
     }
@@ -181,8 +183,11 @@ class TtsPrefs(context: Context) {
     }
 
     var seenApps: Set<String>
-        get() = prefs.getStringSet(KEY_SEEN_APPS, emptySet())?.toSet() ?: emptySet()
-        set(value) = prefs.edit { putStringSet(KEY_SEEN_APPS, value) }
+        get() = parsedSeenApps ?: (prefs.getStringSet(KEY_SEEN_APPS, emptySet())?.toSet() ?: emptySet()).also { parsedSeenApps = it }
+        set(value) {
+            parsedSeenApps = value
+            prefs.edit { putStringSet(KEY_SEEN_APPS, value) }
+        }
 
     fun noteSeenApp(packageName: String) {
         val cur = seenApps
@@ -435,5 +440,6 @@ class TtsPrefs(context: Context) {
         @Volatile private var parsedTextOptions: Pair<String, TextOptions>? = null
         @Volatile private var parsedLangOverrides: Pair<String, Map<String, LanguageOverride>>? = null
         @Volatile private var parsedAppProfiles: Pair<String, Map<String, AppProfile>>? = null
+        @Volatile private var parsedSeenApps: Set<String>? = null
     }
 }

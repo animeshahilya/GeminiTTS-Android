@@ -315,6 +315,10 @@ private fun AppProfilesSettingsPage(state: UiState, viewModel: MainScreenViewMod
     var editingApp by remember { mutableStateOf<AppEntry?>(null) }
     var showAppPicker by remember { mutableStateOf(false) }
 
+    LaunchedEffect(Unit) {
+        if (state.knownApps.isEmpty()) viewModel.refreshApps()
+    }
+
     Text(
         "Give TalkBack, book readers or other apps their own speed, pitch, volume, voice, style or text preset.",
         style = MaterialTheme.typography.bodySmall

@@ -65,7 +65,8 @@ object NumberReading {
 
     /** Expands Indian comma grouping (`12,34,567`), `₹`/`Rs` shorthands (`₹5L`, `2cr`). */
     fun applyIndianNumbering(editor: SpanEditor, devanagari: Boolean = false) {
-        if (!hasAsciiDigit(editor.current)) return
+        val cur = editor.current
+        if (!hasAsciiDigit(cur) || !mightHaveIndianNumber(cur)) return
         editor.replaceMatches(INDIAN_CURRENCY, protectTtsSpans = true) { m ->
             val rawNum = m.groupValues[1].replace(",", "")
             val scale = m.groupValues[2].lowercase()
@@ -97,8 +98,9 @@ object NumberReading {
     /** Formats digit runs of length >= [minLength] in single digits, pairs, or triplets (skipping money). */
     fun formatDigitGrouping(editor: SpanEditor, mode: DigitGroupingMode, minLength: Int) {
         if (mode == DigitGroupingMode.OFF) return
-        val snapshot = editor.current.toString()
-        if (!hasAsciiDigit(snapshot)) return
+        val cur = editor.current
+        if (!hasAsciiDigit(cur)) return
+        val snapshot = cur.toString()
         val groupSize = when (mode) {
             DigitGroupingMode.SINGLE -> 1
             DigitGroupingMode.PAIRS, DigitGroupingMode.PAIRS_PAUSE -> 2
@@ -176,6 +178,15 @@ object NumberReading {
     private fun hasAsciiDigit(text: CharSequence): Boolean {
         for (i in 0 until text.length) {
             if (text[i] in '0'..'9') return true
+        }
+        return false
+    }
+
+    private fun mightHaveIndianNumber(text: CharSequence): Boolean {
+        for (i in 0 until text.length) {
+            when (text[i]) {
+                ',', '₹', 'r', 'R', 'l', 'L', 'c', 'C', 'i', 'I' -> return true
+            }
         }
         return false
     }

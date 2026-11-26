@@ -113,10 +113,7 @@ class PcmProcessor(
             flushReserve(activeSonic)
         }
         if (remaining > 0) {
-            activeSonic.writeBytesToStream(
-                if (offset == 0) bytes else bytes.copyOfRange(offset, offset + remaining),
-                remaining
-            )
+            activeSonic.writeBytesToStream(bytes, remaining, offset)
         }
         drain(activeSonic)
     }

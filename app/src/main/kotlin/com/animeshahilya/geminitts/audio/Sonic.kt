@@ -403,9 +403,9 @@ class Sonic(
     }
 
     /**
-     * Write raw byte array (16-bit PCM little endian) into the processing stream.
+     * Write raw byte array (16-bit PCM little endian) into the processing stream starting at [offset].
      */
-    fun writeBytesToStream(bytes: ByteArray, length: Int) {
+    fun writeBytesToStream(bytes: ByteArray, length: Int, offset: Int = 0) {
         if (length <= 0) return
         val bytesPerSample = numChannels * 2
         val samplesToAdd = length / bytesPerSample
@@ -414,8 +414,9 @@ class Sonic(
         enlargeInputBufferIfNeeded(samplesToAdd)
 
         var sampleIndex = numInputSamples * numChannels
-        var byteIndex = 0
-        while (byteIndex < validLength) {
+        var byteIndex = offset
+        val limit = offset + validLength
+        while (byteIndex < limit) {
             val low = bytes[byteIndex].toInt() and 0xFF
             val high = bytes[byteIndex + 1].toInt() shl 8
             inputBuffer[sampleIndex] = (low or high).toShort()

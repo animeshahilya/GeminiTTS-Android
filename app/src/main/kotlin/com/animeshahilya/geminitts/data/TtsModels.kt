@@ -41,14 +41,15 @@ data class TextOptions(
     val shortenUrls: Boolean = false,
     val normalizeTechWords: Boolean = false
 ) {
-    val fingerprint: String
-        get() = listOf(
+    val fingerprint: String by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        listOf(
             b(normalizeFancyUnicode), b(collapseRepeats), b(cleanMarkdown),
             b(silenceSymbols), if (silenceSymbols) silencedSymbols else "",
             digitGrouping.id, digitGroupMinLen, b(preserveLeadingZeros),
             b(readCodesDigits), b(indianNumbering), b(splitCamelCase),
             b(shortenUrls), b(normalizeTechWords)
         ).joinToString("|")
+    }
 
     fun applyAppPreset(preset: TextPreset): TextOptions = when (preset) {
         TextPreset.INHERIT -> this

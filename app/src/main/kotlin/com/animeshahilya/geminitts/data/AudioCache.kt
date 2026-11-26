@@ -25,10 +25,21 @@ class AudioCache private constructor(context: Context) {
     }
 
     /** Case matters: "US" and "us" are said differently. */
-    fun key(text: String, voiceName: String): String =
-        MessageDigest.getInstance("SHA-256")
-            .digest("$voiceName\u0000$text".toByteArray(Charsets.UTF_8))
-            .joinToString("") { "%02x".format(it) }
+    fun key(text: String, voiceName: String): String {
+        val digest = SHA256.get()!!
+        digest.reset()
+        digest.update(voiceName.toByteArray(Charsets.UTF_8))
+        digest.update(0)
+        digest.update(text.toByteArray(Charsets.UTF_8))
+        val bytes = digest.digest()
+        val chars = CharArray(bytes.size * 2)
+        for (i in bytes.indices) {
+            val b = bytes[i].toInt() and 0xFF
+            chars[i * 2] = HEX_CHARS[b ushr 4]
+            chars[i * 2 + 1] = HEX_CHARS[b and 0x0F]
+        }
+        return String(chars)
+    }
 
     fun get(key: String): Clip? {
         memory.get(key)?.let { return it }
@@ -99,6 +110,8 @@ class AudioCache private constructor(context: Context) {
         private const val MAX_DISK_BYTES = 64L * 1024 * 1024
         /** About 15 s of 24 kHz mono: long passages would push out hundreds of short UI phrases. */
         const val MAX_ENTRY_BYTES = 24_000 * 2 * 15
+        private val HEX_CHARS = "0123456789abcdef".toCharArray()
+        private val SHA256 = ThreadLocal.withInitial { MessageDigest.getInstance("SHA-256") }
 
         @Volatile private var instance: AudioCache? = null
 

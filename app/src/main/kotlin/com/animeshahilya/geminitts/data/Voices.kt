@@ -80,12 +80,42 @@ object SampleTexts {
     fun forLanguageTag(code: String): String = forLocale(Locale.forLanguageTag(code))
 }
 
-/** Resolved language, prioritized voice candidate list, and desired target voice for an utterance. */
-data class VoicePlan(
+/** Resolved language, fast preferred voice list, lazy full candidates, and desired target voice. */
+class VoicePlan(
     val language: Locale,
-    val candidates: List<VoiceEntry>,
+    val preferred: List<VoiceEntry>,
+    private val allVoices: List<VoiceEntry>,
+    private val chosenVoiceId: String?,
     val wanted: VoiceEntry?
-)
+) {
+    val candidates: List<VoiceEntry> by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        if (preferred.isEmpty()) sortedFallback() else (preferred + sortedFallback()).distinct()
+    }
+
+    /** Picks the first installed voice in [preferred], sorting [allVoices] only if all preferred voices miss. */
+    inline fun <T : Any> firstInstalled(lookup: (VoiceEntry) -> T?): T? {
+        for (entry in preferred) {
+            lookup(entry)?.let { return it }
+        }
+        return findInstalledFallback(lookup)
+    }
+
+    @PublishedApi
+    internal inline fun <T : Any> findInstalledFallback(lookup: (VoiceEntry) -> T?): T? {
+        for (entry in sortedFallback()) {
+            lookup(entry)?.let { return it }
+        }
+        return null
+    }
+
+    @PublishedApi
+    internal fun sortedFallback(): List<VoiceEntry> {
+        val systemLang = Locale.getDefault().language
+        return allVoices.sortedWith(
+            compareBy({ chosenVoiceId != null && it.id != chosenVoiceId }, { it.id }, { it.locale.language != systemLang })
+        )
+    }
+}
 
 /**
  * Computes voice & locale precedence:
@@ -105,7 +135,7 @@ fun resolveVoicePlan(
     defaultLocale: Locale,
     isInternalCaller: Boolean
 ): VoicePlan {
-    val requested = voices.firstOrNull { it.name == requestedVoiceName }
+    val requested = if (requestedVoiceName.isNullOrEmpty()) null else voices.firstOrNull { it.name == requestedVoiceName }
     val targetLang = wholeLocale?.iso3Language() ?: reqLang
     val targetCountry = wholeLocale?.iso3Country() ?: reqCountry
 
@@ -130,11 +160,6 @@ fun resolveVoicePlan(
     val langPool = voicesFor(voices, chosenVoiceId, language.iso3Language(), language.iso3Country())
     val includeRequested = requested != null && chosenVoiceId == null && requested.matches(language.iso3Language())
     val orderedSameLang = if (includeRequested) (listOf(requested) + langPool).distinct() else langPool
-    val systemLang = Locale.getDefault().language
-    val fallbackAny = voices.sortedWith(
-        compareBy({ chosenVoiceId != null && it.id != chosenVoiceId }, { it.id }, { it.locale.language != systemLang })
-    )
-    val candidates = (orderedSameLang + fallbackAny).distinct()
     val wanted = pickVoice(voices, chosenVoiceId ?: globalVoiceId, language.iso3Language(), language.iso3Country())
-    return VoicePlan(language, candidates, wanted)
+    return VoicePlan(language, orderedSameLang, voices, chosenVoiceId, wanted)
 }

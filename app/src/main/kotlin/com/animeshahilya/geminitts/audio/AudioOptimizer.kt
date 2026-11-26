@@ -80,12 +80,15 @@ class AudioOptimizer(
                 1f
             }
 
-            // Compute shared envelope/limiter across channels in this frame so stereo stays balanced.
+            // Read raw PCM once per channel into tempFrame; compute framePeak only when leveler needs it.
             var framePeak = 0f
             for (ch in 0 until channels) {
-                val s = getSample16(data, pos + ch * 2).toFloat()
-                val a = abs(s)
-                if (a > framePeak) framePeak = a
+                val raw = getSample16(data, pos + ch * 2).toFloat()
+                tempFrame[ch] = raw
+                if (useLeveler) {
+                    val a = abs(raw)
+                    if (a > framePeak) framePeak = a
+                }
             }
             if (useLeveler) {
                 levelEnvelope += levelEnvelopeAlpha * (framePeak - levelEnvelope)
@@ -98,8 +101,7 @@ class AudioOptimizer(
             var postPeak = 0f
 
             for (ch in 0 until channels) {
-                val bytePos = pos + ch * 2
-                var sample = getSample16(data, bytePos).toFloat() * totalScale
+                var sample = tempFrame[ch] * totalScale
 
                 if (usePresence) {
                     val hp = presenceHighpassAlpha * (prevHighPass[ch] + sample - prevInput[ch])
@@ -113,8 +115,10 @@ class AudioOptimizer(
                     sample += saturated * presenceScaledBlend
                 }
 
-                val mag = abs(sample)
-                if (mag > postPeak) postPeak = mag
+                if (useLimiter) {
+                    val mag = abs(sample)
+                    if (mag > postPeak) postPeak = mag
+                }
                 tempFrame[ch] = sample
             }
 

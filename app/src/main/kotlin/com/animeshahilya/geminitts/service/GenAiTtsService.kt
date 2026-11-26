@@ -174,7 +174,7 @@ class GenAiTtsService : TextToSpeechService() {
         )
         val language = plan.language
         val langOverride = prefs.languageOverrideFor(language)
-        val voice = plan.candidates.firstNotNullOfOrNull { synth.installedVoice(it.name) }
+        val voice = plan.firstInstalled { synth.installedVoice(it.name) }
 
         plan.wanted?.let { wanted ->
             val using = voice?.name?.removeSuffix("-local")
@@ -196,7 +196,7 @@ class GenAiTtsService : TextToSpeechService() {
 
         val textOpts = prefs.textOptions.applyAppPreset(appProfile?.textPreset ?: TextPreset.INHERIT)
         val text = TextPipeline.process(rawText, textOpts, prefs.dictionary, language.toLanguageTag())
-        val isSingleChar = TextPipeline.isSingleCharacter(text)
+        val isSingleChar = prefs.levelerEnabled && TextPipeline.isSingleCharacter(text)
 
         val out = PcmProcessor(
             callback = callback,

@@ -178,26 +178,26 @@ object TextPipeline {
 
     private fun isHangOrControl(c: Char): Boolean {
         if (c < ' ') return c != '\t' && c != '\n' && c != '\r'
-        return c == '\u007F' || c == '\u200B' || c == '\u200E' || c == '\u200F' ||
-            c in '\u202A'..'\u202E' || c in '\u2060'..'\u2064' || c == '\uFEFF'
+        if (c < '\u007F') return false
+        return c == '\u007F' || (c >= '\u200B' && (c == '\u200B' || c == '\u200E' || c == '\u200F' ||
+            c in '\u202A'..'\u202E' || c in '\u2060'..'\u2064' || c == '\uFEFF'))
     }
 
     private fun normalizeFancyUnicode(editor: SpanEditor) {
-        val s = editor.current.toString()
+        val cur = editor.current
         var hasFancy = false
-        var i = 0
-        while (i < s.length) {
-            val cp = Character.codePointAt(s, i)
-            if (cp in 0x1D400..0x1D7FF || cp in 0xFF01..0xFF5E || cp == 0x3000 || mapLetterlikeHole(cp) != null) {
+        for (idx in 0 until cur.length) {
+            val code = cur[idx].code
+            // Surrogates (>= 0xD800 covers 0x1D400..0x1D7FF), fullwidth (0xFF01..0xFF5E), ideographic space (0x3000), or letterlike holes (0x2102..0x2134).
+            if (code >= 0x2100 && (code >= 0xD800 || code in 0xFF01..0xFF5E || code == 0x3000 || mapLetterlikeHole(code) != null)) {
                 hasFancy = true
                 break
             }
-            i += Character.charCount(cp)
         }
         if (!hasFancy) return
-
+        val s = cur.toString()
         val replacements = ArrayList<Triple<Int, Int, String>>()
-        i = 0
+        var i = 0
         while (i < s.length) {
             val cp = Character.codePointAt(s, i)
             val count = Character.charCount(cp)
@@ -317,8 +317,13 @@ object TextPipeline {
     }
 
     private fun condenseRepeatedEmojis(editor: SpanEditor) {
-        val s = editor.current.toString()
-        if (!s.any { it.code >= 0x2300 }) return
+        val cur = editor.current
+        var hasHigh = false
+        for (idx in 0 until cur.length) {
+            if (cur[idx].code >= 0x2300) { hasHigh = true; break }
+        }
+        if (!hasHigh) return
+        val s = cur.toString()
         val edits = ArrayList<Triple<Int, Int, String>>()
         var i = 0
         while (i < s.length) {
@@ -362,7 +367,14 @@ object TextPipeline {
     }
 
     private fun silenceFormattingSymbols(editor: SpanEditor, silencedSet: String) {
-        val s = editor.current.toString()
+        val cur = editor.current
+        var hasTarget = false
+        for (idx in 0 until cur.length) {
+            val ch = cur[idx]
+            if (ch in silencedSet || ch in '\u2500'..'\u257F' || ch == '\u0640') { hasTarget = true; break }
+        }
+        if (!hasTarget) return
+        val s = cur.toString()
         val emailRanges = if ('@' in s) EMAIL_RANGE.findAll(s).map { it.range }.toList() else emptyList()
         val edits = ArrayList<Triple<Int, Int, String>>()
         var i = 0
@@ -415,8 +427,15 @@ object TextPipeline {
 
     /** True when [text] is a single visual character, emoji cluster, or Indic akshara. */
     fun isSingleCharacter(text: CharSequence): Boolean {
-        val s = text.toString().trim()
-        if (s.isEmpty()) return false
+        var start = 0
+        var end = text.length
+        while (start < end && text[start].isWhitespace()) start++
+        while (end > start && text[end - 1].isWhitespace()) end--
+        val trimmedLen = end - start
+        if (trimmedLen == 0) return false
+        if (trimmedLen == 1) return !Character.isSurrogate(text[start])
+        if (text[start].code < 0x300 && text[start + 1].code < 0x300) return false
+        val s = if (start == 0 && end == text.length) text.toString() else text.subSequence(start, end).toString()
         if (s.codePointCount(0, s.length) == 1) return true
         if (emojiClusterLength(s, 0) == s.length) return true
         return isSingleIndicCluster(s) || isSingleBaseWithMarks(s)

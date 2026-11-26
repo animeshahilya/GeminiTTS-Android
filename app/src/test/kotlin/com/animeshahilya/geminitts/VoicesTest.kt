@@ -79,6 +79,8 @@ class VoicesTest {
         )
         assertEquals("en-us-x-star04", appPlan.candidates.first().name)
         assertEquals("en-us-x-star04", appPlan.wanted?.name)
+        assertEquals("en-us-x-star04", appPlan.firstInstalled { if (it.name == "en-us-x-star04") it else null }?.name)
+        assertEquals("en-gb-x-star04", appPlan.firstInstalled { if (it.name == "en-gb-x-star04") it else null }?.name)
 
         // Whole-utterance LocaleSpan switches locale even when English default voiceName is attached.
         val spanPlan = resolveVoicePlan(
