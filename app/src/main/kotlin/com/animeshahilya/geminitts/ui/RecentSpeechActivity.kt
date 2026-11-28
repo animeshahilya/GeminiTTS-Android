@@ -45,6 +45,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.animeshahilya.geminitts.data.RecentSpeech
 import com.animeshahilya.geminitts.data.TtsPrefs
+import com.animeshahilya.geminitts.data.withTtsAttribution
 import com.animeshahilya.geminitts.ui.theme.GeminiTtsTheme
 import java.text.BreakIterator
 
@@ -64,7 +65,7 @@ class RecentSpeechActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        tts = TextToSpeech(this, { status ->
+        tts = TextToSpeech(withTtsAttribution(), { status ->
             ttsReady = status == TextToSpeech.SUCCESS
             if (ttsReady) pendingAction?.also { pendingAction = null }?.invoke()
         }, packageName).apply {

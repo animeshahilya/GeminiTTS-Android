@@ -1,7 +1,9 @@
 package com.animeshahilya.geminitts.service
 
 import android.content.ComponentCallbacks2
+import android.content.Context
 import android.media.AudioFormat
+import com.animeshahilya.geminitts.data.withTtsAttribution
 import android.os.Bundle
 import android.os.PowerManager
 import android.os.Process
@@ -60,6 +62,10 @@ class GenAiTtsService : TextToSpeechService() {
 
     // Voice names already downloaded (or tried) in the background since the service started.
     private val downloads: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(newBase.withTtsAttribution())
+    }
 
     override fun onCreate() {
         // super.onCreate() already asks for the default language, so set up first.

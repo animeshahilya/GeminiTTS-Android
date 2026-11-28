@@ -1,6 +1,7 @@
 package com.animeshahilya.geminitts.data
 
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import com.google.mlkit.genai.common.DownloadStatus
 import com.google.mlkit.genai.common.FeatureStatus
@@ -86,3 +87,10 @@ object GenAiVoices {
 
     private const val TAG = "GenAiVoices"
 }
+
+internal const val TTS_ATTRIBUTION_TAG = "tts_playback"
+
+/** Tags audio/TTS contexts with the manifest-declared [TTS_ATTRIBUTION_TAG] on Android 12+. */
+fun Context.withTtsAttribution(): Context =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) createAttributionContext(TTS_ATTRIBUTION_TAG)
+    else this

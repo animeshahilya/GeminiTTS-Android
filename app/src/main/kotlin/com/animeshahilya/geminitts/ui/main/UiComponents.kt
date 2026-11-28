@@ -12,11 +12,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -41,6 +44,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -56,6 +60,30 @@ fun openTtsSettings(context: Context) {
 @Composable
 fun SectionTitle(text: String, modifier: Modifier = Modifier) {
     Text(text, style = MaterialTheme.typography.titleMedium, modifier = modifier.semantics { heading() })
+}
+
+/**
+ * AlertDialog configured to respect system bars and the on-screen keyboard so input fields,
+ * validation messages, and Confirm/Cancel actions stay visible while typing.
+ */
+@Composable
+fun AppAlertDialog(
+    onDismissRequest: () -> Unit,
+    title: String,
+    confirmButton: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    dismissButton: (@Composable () -> Unit)? = null,
+    text: @Composable () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        properties = DialogProperties(decorFitsSystemWindows = false),
+        modifier = modifier.systemBarsPadding().imePadding(),
+        title = { Text(title, modifier = Modifier.semantics { heading() }) },
+        text = text,
+        confirmButton = confirmButton,
+        dismissButton = dismissButton
+    )
 }
 
 /** Clean Settings list item leading to a focused sub-screen. */

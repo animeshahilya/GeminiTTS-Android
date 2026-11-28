@@ -6,8 +6,8 @@ import kotlin.math.abs
  * Strips neural model dead air without adding live latency:
  * - [LeadingSilenceTrimmer] drops leading silence frames up to [MAX_LEAD_TRIM_MS], preserving a
  *   short [PRE_ROLL_MS] ring buffer so soft consonant onsets are never clipped.
- * - [trimTrailingSilence] trims trailing dead air from buffered clips (cache entries or
- *   high-speed reserve) with a [POST_PAD_MS] tail cushion.
+ * - [trimClip] trims leading and trailing dead air from buffered clips (such as cache entries)
+ *   with [PRE_ROLL_MS] and [POST_PAD_MS] cushions while leaving sub-threshold audio untouched.
  */
 class LeadingSilenceTrimmer(
     sampleRateHz: Int,

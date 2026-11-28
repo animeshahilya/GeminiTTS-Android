@@ -14,8 +14,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -36,10 +37,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import com.animeshahilya.geminitts.R
@@ -385,15 +388,25 @@ private fun PresetsSettingsPage(state: UiState, viewModel: MainScreenViewModel) 
 
     if (showSavePreset) {
         var name by remember { mutableStateOf("") }
-        AlertDialog(
+        val keyboardController = LocalSoftwareKeyboardController.current
+        AppAlertDialog(
             onDismissRequest = { showSavePreset = false },
-            title = { Text("Save preset", modifier = Modifier.semantics { heading() }) },
+            title = "Save preset",
             text = {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Preset name (e.g. Fast Navigation)") },
                     singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = {
+                        if (name.isNotBlank()) {
+                            viewModel.savePreset(name)
+                            showSavePreset = false
+                        } else {
+                            keyboardController?.hide()
+                        }
+                    }),
                     modifier = Modifier.fillMaxWidth()
                 )
             },
@@ -496,13 +509,15 @@ private fun BackupAboutSettingsPage(onExportBackup: () -> Unit, onImportBackup: 
 @Composable
 private fun AppPickerDialog(apps: List<AppEntry>, onPick: (AppEntry) -> Unit, onDismiss: () -> Unit) {
     var query by remember { mutableStateOf("") }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val filtered = remember(apps, query) {
         val q = query.trim().lowercase()
         if (q.isEmpty()) apps else apps.filter { it.label.lowercase().contains(q) || it.packageName.lowercase().contains(q) }
     }
-    AlertDialog(
+    AppAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Choose app", modifier = Modifier.semantics { heading() }) },
+        title = "Choose app",
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
@@ -510,9 +525,14 @@ private fun AppPickerDialog(apps: List<AppEntry>, onPick: (AppEntry) -> Unit, on
                     onValueChange = { query = it },
                     label = { Text("Search apps") },
                     singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = {
+                        focusManager.clearFocus()
+                        keyboardController?.hide()
+                    }),
                     modifier = Modifier.fillMaxWidth()
                 )
-                LazyColumn(Modifier.heightIn(max = 320.dp)) {
+                LazyColumn(Modifier.weight(1f, fill = false).heightIn(max = 320.dp)) {
                     items(filtered, key = { it.packageName }) { entry ->
                         Column(
                             Modifier.fillMaxWidth().clickable { onPick(entry) }.padding(vertical = 10.dp)
@@ -545,9 +565,9 @@ private fun AppProfileDialog(
     var volume by remember { mutableFloatStateOf(initial.volume) }
     var textPreset by remember { mutableStateOf(initial.textPreset) }
 
-    AlertDialog(
+    AppAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(app.label, modifier = Modifier.semantics { heading() }) },
+        title = app.label,
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 DropdownSelector(

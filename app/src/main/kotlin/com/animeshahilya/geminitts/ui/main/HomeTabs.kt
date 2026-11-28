@@ -16,8 +16,9 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -39,7 +40,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -48,6 +52,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.animeshahilya.geminitts.data.DictionaryRule
 import com.animeshahilya.geminitts.data.LanguageOverride
@@ -304,9 +309,9 @@ private fun LanguageOverrideDialog(
     var volume by remember { mutableFloatStateOf(initial.volume) }
     var enabled by remember { mutableStateOf(initial.enabled) }
 
-    AlertDialog(
+    AppAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(locale.label(), modifier = Modifier.semantics { heading() }) },
+        title = locale.label(),
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 DropdownSelector(
@@ -527,17 +532,22 @@ private fun RuleEditorDialog(
     var isCharacter by remember { mutableStateOf(initial.isCharacter) }
     var language by remember { mutableStateOf(initial.language) }
     var error by remember { mutableStateOf<String?>(null) }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
 
-    AlertDialog(
+    AppAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (isEdit) "Edit pronunciation" else "Add pronunciation", modifier = Modifier.semantics { heading() }) },
+        title = if (isEdit) "Edit pronunciation" else "Add pronunciation",
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = pattern,
                     onValueChange = { pattern = it; error = null },
                     label = { Text("Word or pattern") },
+                    isError = error != null,
                     singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
@@ -545,8 +555,16 @@ private fun RuleEditorDialog(
                     onValueChange = { replacement = it; error = null },
                     label = { Text("Say it as") },
                     singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = {
+                        focusManager.clearFocus()
+                        keyboardController?.hide()
+                    }),
                     modifier = Modifier.fillMaxWidth()
                 )
+                error?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
+                }
                 CheckboxRow("Regular expression", isRegex) { isRegex = it; error = null }
                 if (!isRegex && !isCharacter) {
                     CheckboxRow("Whole words only", wholeWord) { wholeWord = it }
@@ -559,9 +577,6 @@ private fun RuleEditorDialog(
                     itemLabel = { row -> row?.let { "${it.locale.label()} (${it.locale.toLanguageTag()})" } ?: "All languages" },
                     onSelect = { row -> language = row?.locale?.toLanguageTag().orEmpty() }
                 )
-                error?.let {
-                    Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
-                }
             }
         },
         confirmButton = {

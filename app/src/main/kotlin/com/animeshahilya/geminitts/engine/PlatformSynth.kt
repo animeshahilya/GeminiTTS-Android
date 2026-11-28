@@ -9,6 +9,7 @@ import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
 import android.util.Log
 import androidx.core.content.pm.PackageInfoCompat
+import com.animeshahilya.geminitts.data.withTtsAttribution
 import java.io.File
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
@@ -40,7 +41,7 @@ class PlatformSynth(context: Context) {
 
     enum class Result { DONE, CANCELLED, FAILED }
 
-    private val appContext = context.applicationContext
+    private val appContext = context.applicationContext.withTtsAttribution()
     val enginePackage: String? = pickEngine(appContext)
 
     private val lock = Any()

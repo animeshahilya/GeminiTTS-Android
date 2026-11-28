@@ -25,6 +25,7 @@ import com.animeshahilya.geminitts.data.TtsPrefs
 import com.animeshahilya.geminitts.data.VoicePreset
 import com.animeshahilya.geminitts.data.label
 import com.animeshahilya.geminitts.data.voiceId
+import com.animeshahilya.geminitts.data.withTtsAttribution
 import com.animeshahilya.geminitts.engine.PlatformSynth
 import com.animeshahilya.geminitts.service.CallerTracker
 import com.google.mlkit.genai.common.DownloadStatus
@@ -114,7 +115,7 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
     @Volatile private var activeIsTest = false
     @Volatile private var ttsReady = false
     @Volatile private var pendingTtsAction: (() -> Unit)? = null
-    private val tts: TextToSpeech = TextToSpeech(application, { status ->
+    private val tts: TextToSpeech = TextToSpeech(application.withTtsAttribution(), { status ->
         ttsReady = status == TextToSpeech.SUCCESS
         refreshEngineCheck()
         if (ttsReady) pendingTtsAction?.also { pendingTtsAction = null }?.invoke()

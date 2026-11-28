@@ -3,4 +3,5 @@
     <string name="tts_service_label">Gemini TTS</string>
     <string name="recent_speech_title">Recent speech</string>
     <string name="voice_preset_tile_title">Voice preset</string>
+    <string name="attribution_tts_playback">Text-to-speech synthesis and audio playback</string>
 </resources>

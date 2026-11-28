@@ -4,9 +4,12 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -104,58 +107,65 @@ fun MainScreen(viewModel: MainScreenViewModel = viewModel()) {
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-        val activeSettings = settingsPage
-        if (activeSettings != null) {
-            key(activeSettings) {
-                Column(
-                    Modifier
-                        .padding(padding)
-                        .fillMaxSize()
-                        .semantics { paneTitle = activeSettings.title }
-                        .verticalScroll(rememberScrollState())
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    SettingsScreen(
-                        page = activeSettings,
-                        state = state,
-                        viewModel = viewModel,
-                        onNavigate = { settingsPage = it },
-                        onExportBackup = { exportBackupLauncher.launch("gemini-tts-backup.json") },
-                        onImportBackup = { importBackupLauncher.launch(arrayOf("application/json", "*/*")) }
-                    )
-                }
-            }
-        } else {
-            Column(Modifier.padding(padding).fillMaxSize()) {
-                PrimaryScrollableTabRow(selectedTabIndex = tab, edgePadding = 8.dp) {
-                    tabs.forEachIndexed { index, title ->
-                        Tab(selected = tab == index, onClick = { tab = index }, text = { Text(title) })
-                    }
-                }
-                key(tab) {
-                    if (tab == 2) {
-                        DictionaryTab(
+        Box(
+            Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .consumeWindowInsets(padding)
+                .imePadding()
+        ) {
+            val activeSettings = settingsPage
+            if (activeSettings != null) {
+                key(activeSettings) {
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .semantics { paneTitle = activeSettings.title }
+                            .verticalScroll(rememberScrollState())
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        SettingsScreen(
+                            page = activeSettings,
                             state = state,
                             viewModel = viewModel,
-                            onImportDic = { importDicLauncher.launch(arrayOf("*/*")) },
-                            onExportDic = { exportDicLauncher.launch("gemini-tts-dictionary.dic") },
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .semantics { paneTitle = tabs[tab] }
+                            onNavigate = { settingsPage = it },
+                            onExportBackup = { exportBackupLauncher.launch("gemini-tts-backup.json") },
+                            onImportBackup = { importBackupLauncher.launch(arrayOf("application/json", "*/*")) }
                         )
-                    } else {
-                        Column(
-                            Modifier
-                                .fillMaxSize()
-                                .semantics { paneTitle = tabs[tab] }
-                                .verticalScroll(rememberScrollState())
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            when (tab) {
-                                0 -> VoiceTab(state, viewModel, onOpenSettings = { settingsPage = SettingsPage.HUB })
-                                else -> LanguagesTab(state, viewModel)
+                    }
+                }
+            } else {
+                Column(Modifier.fillMaxSize()) {
+                    PrimaryScrollableTabRow(selectedTabIndex = tab, edgePadding = 8.dp) {
+                        tabs.forEachIndexed { index, title ->
+                            Tab(selected = tab == index, onClick = { tab = index }, text = { Text(title) })
+                        }
+                    }
+                    key(tab) {
+                        if (tab == 2) {
+                            DictionaryTab(
+                                state = state,
+                                viewModel = viewModel,
+                                onImportDic = { importDicLauncher.launch(arrayOf("*/*")) },
+                                onExportDic = { exportDicLauncher.launch("gemini-tts-dictionary.dic") },
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .semantics { paneTitle = tabs[tab] }
+                            )
+                        } else {
+                            Column(
+                                Modifier
+                                    .fillMaxSize()
+                                    .semantics { paneTitle = tabs[tab] }
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                when (tab) {
+                                    0 -> VoiceTab(state, viewModel, onOpenSettings = { settingsPage = SettingsPage.HUB })
+                                    else -> LanguagesTab(state, viewModel)
+                                }
                             }
                         }
                     }
