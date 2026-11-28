@@ -10,8 +10,25 @@ data class VoiceEntry(val name: String, val locale: Locale, val gender: String =
 
     /** True for [lang] (ISO 639-2, e.g. "eng") and, when given, [country] (ISO 3166 alpha-3 or alpha-2). */
     fun matches(lang: String?, country: String? = null): Boolean {
-        if (lang.isNullOrEmpty() || !lang.equals(locale.iso3Language(), true) && !lang.equals(locale.language, true)) return false
+        if (lang.isNullOrEmpty()) return false
+        val targetLang = canonicalLang(lang)
+        val localeIso3 = locale.iso3Language()
+        val langMatch = targetLang.equals(localeIso3, true) || targetLang.equals(locale.language, true)
+        if (!langMatch) return false
         return country.isNullOrEmpty() || country.equals(locale.iso3Country(), true) || country.equals(locale.country, true)
+    }
+
+    companion object {
+        internal fun canonicalLang(lang: String): String = when (lang.lowercase()) {
+            "in" -> "ind"
+            "iw" -> "heb"
+            "ji" -> "yid"
+            "no", "nor" -> "nob"
+            "fre" -> "fra"
+            "ger" -> "deu"
+            "dut" -> "nld"
+            else -> lang
+        }
     }
 }
 
@@ -75,9 +92,16 @@ object SampleTexts {
         "tur" to "Bu bir konuşma sentezi örneğidir."
     )
 
-    fun forLocale(locale: Locale): String = BY_ISO3[locale.iso3Language()] ?: BY_ISO3.getValue("eng")
+    fun forLocale(locale: Locale): String =
+        BY_ISO3[VoiceEntry.canonicalLang(locale.iso3Language())] ?: BY_ISO3.getValue("eng")
 
-    fun forLanguageTag(code: String): String = forLocale(Locale.forLanguageTag(code))
+    fun forLanguageTag(code: String): String {
+        val clean = code.trim().replace('_', '-')
+        if (clean.isEmpty()) return BY_ISO3.getValue("eng")
+        val primary = VoiceEntry.canonicalLang(clean.substringBefore('-').lowercase())
+        BY_ISO3[primary]?.let { return it }
+        return forLocale(Locale.forLanguageTag(clean))
+    }
 }
 
 /** Resolved language, fast preferred voice list, lazy full candidates, and desired target voice. */

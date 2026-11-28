@@ -136,4 +136,37 @@ class AudioOptimizerAndTrimTest {
         assertTrue("Second piece ($secondDelta bytes) should also be trimmed (< ${piece.size})", secondDelta < piece.size)
         proc.finish()
     }
+
+    @Test fun levelerDoesNotPumpGainDuringSilence() {
+        val rate = 24_000
+        val speech = pcmTone(rate / 5, amp = 14_000, rate = rate) // 200 ms speech settling near ~1.0x gain
+        val shortPause = ByteArray(rate / 50 * 2) // 20 ms pause (presence filter decays to 0)
+        val longPause = ByteArray(rate * 2) // 2,000 ms pause
+        val probe = pcmTone(rate / 50, amp = 2_000, rate = rate)
+
+        fun probeOut(pause: ByteArray): ByteArray {
+            val combined = speech + pause + probe
+            val opt = AudioOptimizer(
+                sampleRateHz = rate,
+                channels = 1,
+                volumeScale = 1f,
+                preset = ClarityPreset.OUTDOOR,
+                levelerEnabled = true,
+                declickEnabled = false
+            )
+            opt.process(combined)
+            return combined.copyOfRange(speech.size + pause.size, combined.size)
+        }
+
+        val afterShort = probeOut(shortPause)
+        val afterLong = probeOut(longPause)
+        assertArrayEquals(afterShort, afterLong)
+    }
+
+    @Test fun trimClipPreservesSubThresholdSoftAudio() {
+        val rate = 24_000
+        val soft = pcmTone(rate / 2, amp = 80, rate = rate) // 500 ms below threshold (120)
+        val trimmed = LeadingSilenceTrimmer.trimClip(soft, rate, 1)
+        assertEquals(soft.size, trimmed.size)
+    }
 }

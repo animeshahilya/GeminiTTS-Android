@@ -29,7 +29,8 @@ object TextPipeline {
     private val MD_STRIKE = Regex("""~~([^~\n]+)~~""")
     private val MD_ITALIC = Regex("""(?<![\p{L}\d*])\*([^\s*](?:[^*\n]*[^\s*])?)\*(?![\p{L}\d*])""")
 
-    private val PATTERN_URL = Regex("""\b(?:https?://|www\.)[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:/[^\s]*)?""", RegexOption.IGNORE_CASE)
+    private val PATTERN_URL = Regex("""\b(?:https?://|www\.)[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?::\d{1,5})?(?:[/?#][^\s]*)?""", RegexOption.IGNORE_CASE)
+    private val MULTI_SLASH = Regex("/+")
     private val CAMEL_LOWER_UPPER = Regex("""(?<=[\p{Ll}\d])(?=\p{Lu})""")
     private val CAMEL_UPPER_RUN = Regex("""(?<=\p{Lu}\p{Lu})(?=\p{Lu}\p{Ll})""")
     private val SNAKE_CASE = Regex("""(?<=[\p{L}\d])_(?=[\p{L}\d])""")
@@ -120,14 +121,23 @@ object TextPipeline {
         }
         if (options.splitCamelCase) splitCamelCase(work)
 
-        // 5. Numbers & Codes (TtsSpan-safe; Indian currency/commas run before leading-zero & grouping).
-        if (options.readCodesDigits) NumberReading.readCodes(work, englishLabel = englishOrUnset)
+        // 5. Numbers & Codes (TtsSpan-safe; keep URL tokens intact before shortenUrls; Indian currency/commas run before leading-zero & grouping).
+        if (options.readCodesDigits) NumberReading.readCodes(work, englishLabel = englishOrUnset, protectedRanges = urlRanges(work.current))
         if (options.indianNumbering && (englishOrUnset || languageTag.startsWith("hi", ignoreCase = true))) {
-            NumberReading.applyIndianNumbering(work, devanagari = languageTag.startsWith("hi", ignoreCase = true))
+            NumberReading.applyIndianNumbering(
+                work,
+                devanagari = languageTag.startsWith("hi", ignoreCase = true),
+                protectedRanges = urlRanges(work.current)
+            )
         }
-        if (options.preserveLeadingZeros) NumberReading.preserveLeadingZeros(work)
+        if (options.preserveLeadingZeros) NumberReading.preserveLeadingZeros(work, protectedRanges = urlRanges(work.current))
         if (options.digitGrouping != DigitGroupingMode.OFF) {
-            NumberReading.formatDigitGrouping(work, options.digitGrouping, options.digitGroupMinLen)
+            NumberReading.formatDigitGrouping(
+                work,
+                options.digitGrouping,
+                options.digitGroupMinLen,
+                protectedRanges = urlRanges(work.current)
+            )
         }
         if (options.shortenUrls) shortenUrls(work, englishLabel = englishOrUnset)
 
@@ -241,7 +251,7 @@ object TextPipeline {
 
     private fun cleanMarkdown(editor: SpanEditor, englishLabels: Boolean) {
         val cur = editor.current
-        if (!cur.any { it in "*`~#>-[" }) return
+        if (!cur.any { it in "*`~#>-_[" }) return
         if (cur.indexOf('[') >= 0) {
             editor.replaceMatches(MD_CHECK_DONE) { if (englishLabels) "done: " else "" }
             editor.replaceMatches(MD_CHECK_TODO) { if (englishLabels) "todo: " else "" }
@@ -270,7 +280,16 @@ object TextPipeline {
 
     private fun formatUrl(raw: String, englishLabel: Boolean): String {
         var end = raw.length
-        while (end > 0 && raw[end - 1] in ".,;:!?…\"'>") end--
+        while (end > 0) {
+            val c = raw[end - 1]
+            if (c in ".,;:!?…\"'>") {
+                end--
+            } else if (c == ')' && '(' !in raw.subSequence(0, end)) {
+                end--
+            } else {
+                break
+            }
+        }
         val trailing = raw.substring(end)
         var s = raw.substring(0, end)
         s = when {
@@ -286,9 +305,11 @@ object TextPipeline {
             s = s.substring(0, qIdx) + if (query.length > 10) paramNote else query
         }
         val slashWord = if (englishLabel) " slash " else " "
-        s = s.trimEnd('/').replace(Regex("/+"), slashWord).trim()
+        s = s.trimEnd('/').replace(MULTI_SLASH, slashWord).trim()
         val body = if (englishLabel) "link $s" else s
-        return if (trailing.isEmpty()) body else "$body $trailing"
+        if (trailing.isEmpty()) return body
+        val sep = if (trailing[0] in ".,;:!?…)") "" else " "
+        return "$body$sep$trailing"
     }
 
     private fun urlRanges(text: CharSequence): List<IntRange> =
@@ -419,7 +440,7 @@ object TextPipeline {
         val prevDigit = index > 0 && s[index - 1].isDigit()
         val nextDigit = index + 1 < s.length && s[index + 1].isDigit()
         return when (ch) {
-            '-' -> nextDigit || (prevDigit && nextDigit)
+            '-' -> nextDigit
             '*' -> prevDigit && nextDigit
             else -> false
         }

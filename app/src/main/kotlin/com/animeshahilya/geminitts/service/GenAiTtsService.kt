@@ -55,9 +55,11 @@ class GenAiTtsService : TextToSpeechService() {
 
     // Bumped by onStop; an utterance whose number is stale stops at its next chunk.
     private val generation = AtomicLong()
+    private val stopLock = Any()
+    @Volatile private var hasSynthesized = false
 
-    // Languages already downloaded (or tried) in the background since the service started.
-    private val downloads: MutableSet<Locale> = ConcurrentHashMap.newKeySet()
+    // Voice names already downloaded (or tried) in the background since the service started.
+    private val downloads: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     override fun onCreate() {
         // super.onCreate() already asks for the default language, so set up first.
@@ -70,12 +72,13 @@ class GenAiTtsService : TextToSpeechService() {
         super.onCreate()
         scope.launch {
             fun warmUp(): Boolean {
+                if (hasSynthesized || generation.get() > 0L) return true
                 val entry = prefs.voiceFor(Locale.getDefault())
                 return synth.warmUp(entry?.name, entry?.locale ?: GenAiVoices.DEFAULT_LOCALE)
             }
             val warmed = warmUp()
             GenAiVoices.refresh(this@GenAiTtsService)
-            if (!warmed && prefs.voices.isNotEmpty()) {
+            if (!warmed && !hasSynthesized && generation.get() == 0L && prefs.voices.isNotEmpty()) {
                 synth.forget()
                 warmUp()
             }
@@ -127,8 +130,10 @@ class GenAiTtsService : TextToSpeechService() {
         prefs.voiceFor(lang, country)?.name
 
     override fun onStop() {
-        generation.incrementAndGet()
-        synth.stop()
+        synchronized(stopLock) {
+            generation.incrementAndGet()
+            synth.stop()
+        }
     }
 
     override fun onTrimMemory(level: Int) {
@@ -139,7 +144,8 @@ class GenAiTtsService : TextToSpeechService() {
 
     override fun onSynthesizeText(request: SynthesisRequest?, callback: SynthesisCallback?) {
         if (request == null || callback == null) return
-        val gen = generation.get()
+        hasSynthesized = true
+        val gen = synchronized(stopLock) { generation.get() }
         val cancelled = { generation.get() != gen }
 
         val caller = CallerTracker.callerPackage(this, request.callerUid)
@@ -196,23 +202,11 @@ class GenAiTtsService : TextToSpeechService() {
 
         val textOpts = prefs.textOptions.applyAppPreset(appProfile?.textPreset ?: TextPreset.INHERIT)
         val text = TextPipeline.process(rawText, textOpts, prefs.dictionary, language.toLanguageTag())
-        val isSingleChar = prefs.levelerEnabled && TextPipeline.isSingleCharacter(text)
-
-        val out = PcmProcessor(
-            callback = callback,
-            isCancelled = cancelled,
-            speed = effectiveSpeed,
-            pitch = effectivePitch,
-            volume = effectiveVolume,
-            clarity = prefs.clarityPreset,
-            leveler = prefs.levelerEnabled,
-            trimLeadingSilence = prefs.trimSilence,
-            isSingleChar = isSingleChar
-        )
         if (text.isBlank()) {
-            out.finish()
+            if (!cancelled()) PcmProcessor(callback, cancelled).finish()
             return
         }
+        val isSingleChar = prefs.levelerEnabled && TextPipeline.isSingleCharacter(text)
 
         Log.d(
             TAG,
@@ -231,17 +225,30 @@ class GenAiTtsService : TextToSpeechService() {
                 "${voice.name}|${synth.engineVersion}|${style.sentencePauseMs}|${style.paragraphPauseMs}|${textOpts.fingerprint}|${prefs.trimSilence}"
             )
         } else null
-        val pieces = splitForPauses(text, style)
+        if (cancelled()) return
+        val cachedClip = key?.let { cache.get(it) }
+        val out = PcmProcessor(
+            callback = callback,
+            isCancelled = cancelled,
+            speed = effectiveSpeed,
+            pitch = effectivePitch,
+            volume = effectiveVolume,
+            clarity = prefs.clarityPreset,
+            leveler = prefs.levelerEnabled,
+            trimLeadingSilence = prefs.trimSilence && cachedClip == null,
+            isSingleChar = isSingleChar
+        )
+        val pieces = if (cachedClip == null) splitForPauses(text, style) else emptyList()
 
         val prevPriority = Process.getThreadPriority(Process.myTid())
         runCatching { Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO) }
         wakeLock.acquire(WAKE_LOCK_MS)
         val startedAt = SystemClock.elapsedRealtime()
         try {
-            key?.let { cache.get(it) }?.let { clip ->
-                out.start(clip.sampleRate, clip.channels)
-                out.pcm(clip.pcm)
-                out.finish(clip.sampleRate)
+            if (cachedClip != null) {
+                out.start(cachedClip.sampleRate, cachedClip.channels)
+                out.pcm(cachedClip.pcm)
+                out.finish(cachedClip.sampleRate)
                 Log.d(TAG, "cache hit, ${voice?.name}, ${SystemClock.elapsedRealtime() - startedAt} ms")
                 return
             }
@@ -263,9 +270,9 @@ class GenAiTtsService : TextToSpeechService() {
         }
     }
 
-    /** Downloads [entry] in the background, once per language while the service runs, if the user allows it. */
+    /** Downloads [entry] in the background, once per voice while the service runs, if the user allows it. */
     private fun downloadLater(entry: VoiceEntry) {
-        if (!prefs.autoDownload || !downloads.add(entry.locale)) return
+        if (!prefs.autoDownload || !downloads.add(entry.name)) return
         scope.launch {
             val ok = GenAiVoices.download(entry.locale, entry.name)
             Log.d(TAG, "Background download of ${entry.name}: ${if (ok) "done" else "failed"}")

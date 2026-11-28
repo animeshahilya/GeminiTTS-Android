@@ -5,12 +5,15 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -380,7 +383,8 @@ fun DictionaryTab(
     state: UiState,
     viewModel: MainScreenViewModel,
     onImportDic: () -> Unit,
-    onExportDic: () -> Unit
+    onExportDic: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     var search by rememberSaveable { mutableStateOf("") }
     var filterMode by rememberSaveable { mutableIntStateOf(0) }
@@ -388,61 +392,6 @@ fun DictionaryTab(
     var showTester by rememberSaveable { mutableStateOf(false) }
     var testPhrase by rememberSaveable { mutableStateOf("") }
 
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(
-            onClick = { editingRule = null to DictionaryRule("", "") },
-            modifier = Modifier.defaultMinSize(minHeight = 48.dp)
-        ) { Text("Add rule") }
-        OutlinedButton(onClick = onImportDic, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) { Text("Import .dic") }
-        OutlinedButton(onClick = onExportDic, enabled = state.rules.isNotEmpty(), modifier = Modifier.defaultMinSize(minHeight = 48.dp)) {
-            Text("Export .dic")
-        }
-    }
-
-    if (state.rules.isNotEmpty()) {
-        OutlinedTextField(
-            value = search,
-            onValueChange = { search = it },
-            label = { Text("Search rules") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            listOf("All", "Words", "Single char").forEachIndexed { idx, label ->
-                FilterChip(
-                    selected = filterMode == idx,
-                    onClick = { filterMode = idx },
-                    label = { Text(label) },
-                    modifier = Modifier.defaultMinSize(minHeight = 48.dp)
-                )
-            }
-            TextButton(
-                onClick = { showTester = !showTester },
-                modifier = Modifier.defaultMinSize(minHeight = 48.dp)
-            ) { Text(if (showTester) "Hide test" else "Test") }
-        }
-        if (showTester) {
-            OutlinedTextField(
-                value = testPhrase,
-                onValueChange = { testPhrase = it },
-                label = { Text("Test dictionary on phrase") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            if (testPhrase.isNotBlank()) {
-                val out = remember(testPhrase, state.rules, state.testLocale) {
-                    viewModel.previewTextTransform(testPhrase, useDictionaryOnly = true)
-                }
-                Text("Result: $out", style = MaterialTheme.typography.bodySmall, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-            }
-        }
-    }
-
-    SectionTitle("Your pronunciations (${state.rules.size})")
     val visible = remember(state.rules, search, filterMode) {
         val q = search.trim().lowercase()
         state.rules.filter { r ->
@@ -455,19 +404,102 @@ fun DictionaryTab(
             matchFilter && matchQuery
         }
     }
-    if (visible.isEmpty()) {
-        Text(
-            if (state.rules.isEmpty()) "No pronunciation rules yet. Tap Add rule or import an NVDA .dic file." else "No rules match your filter.",
-            style = MaterialTheme.typography.bodySmall
-        )
-    }
-    visible.forEach { rule ->
-        RuleRow(
-            rule = rule,
-            onEdit = { editingRule = rule to rule },
-            onDelete = { viewModel.removeRule(rule) }
-        )
-        HorizontalDivider()
+
+    LazyColumn(
+        modifier = modifier,
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item(key = "actions") {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { editingRule = null to DictionaryRule("", "") },
+                    modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+                ) { Text("Add rule") }
+                OutlinedButton(onClick = onImportDic, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) { Text("Import .dic") }
+                OutlinedButton(onClick = onExportDic, enabled = state.rules.isNotEmpty(), modifier = Modifier.defaultMinSize(minHeight = 48.dp)) {
+                    Text("Export .dic")
+                }
+            }
+        }
+
+        if (state.rules.isNotEmpty()) {
+            item(key = "search") {
+                OutlinedTextField(
+                    value = search,
+                    onValueChange = { search = it },
+                    label = { Text("Search rules") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            item(key = "filters") {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    listOf("All", "Words", "Single char").forEachIndexed { idx, label ->
+                        FilterChip(
+                            selected = filterMode == idx,
+                            onClick = { filterMode = idx },
+                            label = { Text(label) },
+                            modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+                        )
+                    }
+                    TextButton(
+                        onClick = { showTester = !showTester },
+                        modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+                    ) { Text(if (showTester) "Hide test" else "Test") }
+                }
+            }
+            if (showTester) {
+                item(key = "tester") {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = testPhrase,
+                            onValueChange = { testPhrase = it },
+                            label = { Text("Test dictionary on phrase") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        if (testPhrase.isNotBlank()) {
+                            val out = remember(testPhrase, state.rules, state.testLocale) {
+                                viewModel.previewTextTransform(testPhrase, useDictionaryOnly = true)
+                            }
+                            Text("Result: $out", style = MaterialTheme.typography.bodySmall, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                        }
+                    }
+                }
+            }
+        }
+
+        item(key = "heading") {
+            SectionTitle("Your pronunciations (${state.rules.size})")
+        }
+
+        if (visible.isEmpty()) {
+            item(key = "empty") {
+                Text(
+                    if (state.rules.isEmpty()) "No pronunciation rules yet. Tap Add rule or import an NVDA .dic file." else "No rules match your filter.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        } else {
+            itemsIndexed(
+                items = visible,
+                key = { index, rule -> "$index|${rule.pattern}|${rule.language}|${rule.isCharacter}" }
+            ) { _, rule ->
+                Column {
+                    RuleRow(
+                        rule = rule,
+                        onEdit = { editingRule = rule to rule },
+                        onDelete = { viewModel.removeRule(rule) }
+                    )
+                    HorizontalDivider()
+                }
+            }
+        }
     }
 
     editingRule?.let { (existing, draft) ->

@@ -92,5 +92,20 @@ class DictionaryAndBackupTest {
         assertNotNull(lo)
         assertTrue(lo!!.speed.isFinite() && lo.pitch.isFinite())
         assertEquals(1f, lo.speed, 0.001f)
+
+        assertEquals("space", com.animeshahilya.geminitts.ui.RecentSpeechActivity.spokenSpellToken(" "))
+        assertEquals("new line", com.animeshahilya.geminitts.ui.RecentSpeechActivity.spokenSpellToken("\r\n"))
+        assertEquals("tab", com.animeshahilya.geminitts.ui.RecentSpeechActivity.spokenSpellToken("\t"))
+        assertEquals("caret", com.animeshahilya.geminitts.ui.RecentSpeechActivity.spokenSpellToken("^"))
+        assertEquals("rupee", com.animeshahilya.geminitts.ui.RecentSpeechActivity.spokenSpellToken("₹"))
+        assertEquals("capital É", com.animeshahilya.geminitts.ui.RecentSpeechActivity.spokenSpellToken("É"))
+
+        val preset = com.animeshahilya.geminitts.data.VoicePreset.fromMap(
+            mapOf("name" to "Test", "styleId" to "invalid_style")
+        )
+        assertEquals(com.animeshahilya.geminitts.data.ReadingStyle.STANDARD, preset?.styleId)
+
+        val dicWithCr = BackupRestore.formatNvdaDic(listOf(DictionaryRule("a\rb", "c\rd")))
+        org.junit.Assert.assertFalse('\r' in dicWithCr)
     }
 }

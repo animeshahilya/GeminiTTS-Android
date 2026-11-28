@@ -31,6 +31,7 @@ import com.google.mlkit.genai.common.DownloadStatus
 import com.google.mlkit.genai.common.FeatureStatus
 import com.google.mlkit.genai.texttospeech.VoiceInfo
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -108,6 +109,7 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
     private var startedAt = 0L
     private var firstAudioSeen = false
     private var utteranceSeq = 0L
+    private var statusJob: Job? = null
     @Volatile private var activeUtteranceId: String? = null
     @Volatile private var activeIsTest = false
     @Volatile private var ttsReady = false
@@ -167,8 +169,13 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
                         ?: locales.firstOrNull { l -> l == GenAiVoices.DEFAULT_LOCALE } ?: locales.first()
                 )
             }
-            checkAllStatus()
+            launchStatusCheck()
         }
+    }
+
+    private fun launchStatusCheck() {
+        statusJob?.cancel()
+        statusJob = viewModelScope.launch { checkAllStatus() }
     }
 
     private fun buildInitialState() = UiState(
@@ -239,7 +246,7 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
     fun selectVoice(id: String) {
         prefs.voiceId = id
         _state.update { it.copy(selectedVoice = id, activePresetName = prefs.currentPresetName()) }
-        viewModelScope.launch { checkAllStatus() }
+        launchStatusCheck()
     }
 
     fun previewVoice(id: String) {
@@ -352,7 +359,7 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
     fun setLanguageOverride(override: LanguageOverride) {
         prefs.setLanguageOverride(override)
         _state.update { it.copy(languageOverrides = prefs.languageOverrides) }
-        viewModelScope.launch { checkAllStatus() }
+        launchStatusCheck()
     }
 
     fun setAppProfile(profile: AppProfile) {
@@ -388,19 +395,23 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun applyPreset(preset: VoicePreset) {
-        val voiceChanged = preset.voiceId != _state.value.selectedVoice
+        val targetVoice = preset.voiceId ?: _state.value.voices.firstOrNull()?.id
+        val voiceChanged = targetVoice != _state.value.selectedVoice
         prefs.applyPreset(preset)
         syncPrefsToState("Applied preset '${preset.name}'.")
-        if (voiceChanged) viewModelScope.launch { checkAllStatus() }
+        if (voiceChanged) launchStatusCheck()
     }
 
     private fun syncPrefsToState(message: String?) {
         _state.update { current ->
+            val resolvedVoice = prefs.voiceId?.takeIf { id ->
+                current.voices.isEmpty() || current.voices.any { it.id == id }
+            } ?: current.voices.firstOrNull()?.id ?: current.selectedVoice
             buildInitialState().copy(
                 loading = current.loading,
                 error = current.error,
                 voices = current.voices,
-                selectedVoice = prefs.voiceId ?: current.selectedVoice,
+                selectedVoice = resolvedVoice,
                 languages = current.languages,
                 knownApps = current.knownApps,
                 testLocale = current.testLocale,
@@ -436,6 +447,10 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
         _state.update {
             it.copy(recentSpeechEnabled = enabled, recentSpeechCount = RecentSpeech.items().size)
         }
+    }
+
+    fun refreshRecentSpeechCount() {
+        _state.update { it.copy(recentSpeechCount = RecentSpeech.items().size) }
     }
 
     fun setTestLocale(locale: Locale) = _state.update { it.copy(testLocale = locale) }
@@ -581,7 +596,7 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
                 }
                 syncPrefsToState(msg)
                 refreshApps()
-                viewModelScope.launch { checkAllStatus() }
+                withContext(Dispatchers.Main) { launchStatusCheck() }
             }.onFailure { e ->
                 _state.update { it.copy(statusMessage = "Import failed: ${e.localizedMessage}") }
             }
@@ -608,7 +623,7 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
                 val raw = readBoundedText(uri)
                 val imported = BackupRestore.parseNvdaDic(raw)
                 val merged = (prefs.rules.filterNot { existing ->
-                    imported.any { it.pattern == existing.pattern && it.language == existing.language }
+                    !existing.isCharacter && imported.any { it.pattern == existing.pattern && it.language == existing.language }
                 } + imported)
                 prefs.rules = merged
                 imported.size

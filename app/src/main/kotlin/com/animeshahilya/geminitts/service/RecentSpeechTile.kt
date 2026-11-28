@@ -47,10 +47,15 @@ class RecentSpeechTile : TileService() {
 
     private fun updateTile() {
         val tile = qsTile ?: return
-        tile.state = Tile.STATE_ACTIVE
+        val enabled = TtsPrefs(this).recentSpeechEnabled
+        tile.state = if (enabled) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val count = RecentSpeech.items().size
-            tile.subtitle = if (count > 0) "$count recent" else "Ready"
+            tile.subtitle = if (!enabled) {
+                "Off"
+            } else {
+                val count = RecentSpeech.items().size
+                if (count > 0) "$count recent" else "Ready"
+            }
         }
         tile.updateTile()
     }

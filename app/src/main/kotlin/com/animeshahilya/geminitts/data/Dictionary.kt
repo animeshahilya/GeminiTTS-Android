@@ -62,7 +62,8 @@ class Dictionary(rules: List<DictionaryRule>) {
 
     private class Compiled(
         val rule: DictionaryRule,
-        val regex: Regex?
+        val regex: Regex?,
+        val normalizedLang: String
     )
 
     private val charRules: List<Compiled>
@@ -74,12 +75,13 @@ class Dictionary(rules: List<DictionaryRule>) {
         val texts = ArrayList<Compiled>()
         for (rule in sorted) {
             if (rule.pattern.isEmpty()) continue
+            val normLang = rule.language.trim().replace('_', '-').lowercase()
             if (rule.isCharacter) {
                 val regex = if (rule.isRegex) SafeRegex.compile(rule.pattern, rule.caseSensitive) else null
-                if (!rule.isRegex || regex != null) chars += Compiled(rule, regex)
+                if (!rule.isRegex || regex != null) chars += Compiled(rule, regex, normLang)
             } else {
                 val regex = compileTextRule(rule) ?: continue
-                texts += Compiled(rule, regex)
+                texts += Compiled(rule, regex, normLang)
             }
         }
         charRules = chars
@@ -94,19 +96,23 @@ class Dictionary(rules: List<DictionaryRule>) {
         return runCatching { Regex(expr, options) }.getOrNull()
     }
 
+    private fun matchesLang(scope: String, req: String): Boolean =
+        scope.isEmpty() || (req.isNotEmpty() && (req == scope || req.startsWith("$scope-")))
+
     fun apply(
         text: CharSequence,
         languageTag: String = "",
         isSingleChar: Boolean? = null
     ): CharSequence {
         if (charRules.isEmpty() && textRules.isEmpty()) return text
+        val reqLang = if (languageTag.isEmpty()) "" else languageTag.trim().replace('_', '-').lowercase()
         val editor = SpanEditor(text)
 
         val single = if (charRules.isEmpty()) false else (isSingleChar ?: TextPipeline.isSingleCharacter(text))
         if (single) {
             val trimmed = text.toString().trim()
             for (c in charRules) {
-                if (!c.rule.appliesToLanguage(languageTag)) continue
+                if (!matchesLang(c.normalizedLang, reqLang)) continue
                 val regexMatch = c.regex?.matchEntire(trimmed)
                 val matched = if (c.regex != null) regexMatch != null else trimmed.equals(c.rule.pattern, ignoreCase = !c.rule.caseSensitive)
                 if (matched) {
@@ -118,8 +124,11 @@ class Dictionary(rules: List<DictionaryRule>) {
         }
 
         for (entry in textRules) {
-            if (!entry.rule.appliesToLanguage(languageTag)) continue
+            if (!matchesLang(entry.normalizedLang, reqLang)) continue
             val regex = entry.regex ?: continue
+            if (!entry.rule.isRegex && !editor.current.contains(entry.rule.pattern, ignoreCase = !entry.rule.caseSensitive)) {
+                continue
+            }
             editor.replaceMatches(regex, protectTtsSpans = true) { match ->
                 if (entry.rule.isRegex) expand(entry.rule.replacement, match) else entry.rule.replacement
             }
@@ -127,11 +136,13 @@ class Dictionary(rules: List<DictionaryRule>) {
         return editor.result()
     }
 
-    private fun expand(template: String, match: MatchResult): String =
-        GROUP_REF.replace(template) { ref ->
+    private fun expand(template: String, match: MatchResult): String {
+        if ('$' !in template && '\\' !in template) return template
+        return GROUP_REF.replace(template) { ref ->
             val groupNum = ref.groupValues[1].ifEmpty { ref.groupValues[2] }.toInt()
             match.groupValues.getOrElse(groupNum) { "" }
         }
+    }
 
     companion object {
         private val GROUP_REF = Regex("""\$(\d)|\\([1-9])""")

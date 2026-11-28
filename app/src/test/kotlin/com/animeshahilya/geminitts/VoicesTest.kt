@@ -113,5 +113,13 @@ class VoicesTest {
         )
         assertEquals("en-us-x-star04", previewPlan.candidates.first().name)
         assertEquals("यह वाक् संश्लेषण का एक उदाहरण है।", SampleTexts.forLanguageTag("hi"))
+        assertEquals("यह वाक् संश्लेषण का एक उदाहरण है।", SampleTexts.forLanguageTag("hi_IN"))
+        assertEquals("यह वाक् संश्लेषण का एक उदाहरण है।", SampleTexts.forLanguageTag("hin"))
+        assertEquals("Ini adalah contoh sintesis suara.", SampleTexts.forLanguageTag("in"))
+
+        assertEquals("id-id-x-star02", pickVoice(voices, "star02", "in", "ID")?.name)
+        val norwegian = listOf(v("nb-no-x-star02", "nb-NO"))
+        assertEquals("nb-no-x-star02", pickVoice(norwegian, "star02", "no", "NO")?.name)
+        assertEquals("nb-no-x-star02", pickVoice(norwegian, "star02", "nor", "")?.name)
     }
 }

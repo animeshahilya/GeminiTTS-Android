@@ -91,10 +91,12 @@ class AudioOptimizer(
                 }
             }
             if (useLeveler) {
-                levelEnvelope += levelEnvelopeAlpha * (framePeak - levelEnvelope)
-                val target = (LEVELER_TARGET_LEVEL / maxOf(1f, levelEnvelope))
-                    .coerceIn(LEVELER_MIN_GAIN, preset.maxLevelerGain)
-                levelerSmoothedGain += gainSmoothAlpha * (target - levelerSmoothedGain)
+                if (framePeak > LEVELER_GATE_THRESHOLD) {
+                    levelEnvelope += levelEnvelopeAlpha * (framePeak - levelEnvelope)
+                    val target = (LEVELER_TARGET_LEVEL / maxOf(1f, levelEnvelope))
+                        .coerceIn(LEVELER_MIN_GAIN, preset.maxLevelerGain)
+                    levelerSmoothedGain += gainSmoothAlpha * (target - levelerSmoothedGain)
+                }
             }
 
             val totalScale = fadeFactor * volumeScale * (if (useLeveler) levelerSmoothedGain else 1f)
@@ -176,6 +178,7 @@ class AudioOptimizer(
         private const val GAIN_SMOOTH_ALPHA_REF = 0.0003f
         private const val LEVELER_TARGET_LEVEL = 9000f
         private const val LEVELER_MIN_GAIN = 0.85f
+        private const val LEVELER_GATE_THRESHOLD = 150f
         private const val CLIP_GUARD_THRESHOLD = 30000f
         private const val CLIP_GUARD_RELEASE_ALPHA = 0.01f
         private const val MAX_SLEW_DELTA = 28000f

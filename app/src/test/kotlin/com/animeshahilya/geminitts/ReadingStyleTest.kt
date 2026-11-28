@@ -66,4 +66,8 @@ class ReadingStyleTest {
         val pieces = splitForPauses(spanned, style)
         assertEquals(listOf("Call 123. 456\n789 now." to 300, "Next." to 0), pieces.map { it.first.toString() to it.second })
     }
+
+    @Test fun lowercaseSingleLetterIsNotAbbreviation() {
+        assertEquals(listOf("Option a." to 300, "Next." to 0), split("Option a. Next."))
+    }
 }

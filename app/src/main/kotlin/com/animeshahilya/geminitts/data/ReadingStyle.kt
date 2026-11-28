@@ -153,8 +153,22 @@ private fun insideTtsSpan(text: CharSequence, index: Int): Boolean {
 }
 
 private fun isAbbreviation(piece: CharSequence): Boolean {
-    val word = piece.trimEnd().split(' ', '\t').lastOrNull()?.removeSuffix(".") ?: return false
-    if (!piece.trimEnd().endsWith('.')) return false
+    var end = piece.length
+    while (end > 0 && piece[end - 1].isWhitespace()) end--
+    if (end == 0 || piece[end - 1] != '.') return false
+    val wordEnd = end - 1
+    var wordStart = wordEnd
+    while (wordStart > 0) {
+        val c = piece[wordStart - 1]
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') break
+        wordStart--
+    }
+    val wordLen = wordEnd - wordStart
+    if (wordLen <= 0) return false
     // "Dr", "Mrs", "St" (short and capitalised) or dotted ones like "e.g", "U.S".
-    return (word.length in 1..3 && word.first().isUpperCase()) || '.' in word
+    if (wordLen in 1..3 && piece[wordStart].isUpperCase()) return true
+    for (i in wordStart until wordEnd) {
+        if (piece[i] == '.') return true
+    }
+    return false
 }

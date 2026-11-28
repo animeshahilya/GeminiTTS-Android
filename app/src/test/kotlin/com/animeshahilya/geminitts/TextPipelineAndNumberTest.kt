@@ -120,5 +120,32 @@ class TextPipelineAndNumberTest {
             "कोडी 482910",
             TextPipeline.process("कोडी 482910", full.copy(digitGrouping = DigitGroupingMode.OFF), emptyDict, "hi-IN").toString()
         )
+
+        // Query-only URLs (no '/' before '?'), ports, and surrounding parens stay intact and shorten cleanly.
+        assertEquals(
+            "Check link example.com with parameters.",
+            TextPipeline.process("Check https://example.com?id=1234567890.", full, emptyDict).toString()
+        )
+        assertEquals(
+            "Server link dev.example.com:8080 slash api",
+            TextPipeline.process("Server http://dev.example.com:8080/api", full, emptyDict).toString()
+        )
+        assertEquals(
+            "(See link example.com).",
+            TextPipeline.process("(See https://example.com).", full, emptyDict).toString()
+        )
+        assertEquals("", TextPipeline.process("___", full, emptyDict).toString())
+
+        // Hyphenated dates inside bank/transaction sentences aren't split; masked card with hyphen works.
+        assertEquals(
+            "Transaction of 500 rupees on 28-11-2026 for card ending 1 2 3 4",
+            TextPipeline.process("Transaction of Rs 500 on 28-11-2026 for card XXXX-1234", full.copy(digitGrouping = DigitGroupingMode.OFF), emptyDict).toString()
+        )
+
+        // Hindi currency output is protected from digit grouping.
+        assertEquals(
+            "50000 रुपये",
+            TextPipeline.process("₹50000", full, emptyDict, "hi-IN").toString()
+        )
     }
 }

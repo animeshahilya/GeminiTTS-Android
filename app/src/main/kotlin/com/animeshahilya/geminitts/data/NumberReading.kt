@@ -13,10 +13,11 @@ object NumberReading {
         """(?iu)(?<![\p{L}\p{M}])(otp|one[- ]time|pin|passcode|password|code|cvv|cvv2|pnr|token|txn|transaction|ref|reference|a/c|acct|account|card|id|serial|auth|2fa|iban|swift|verification|verify|код|кода|коду|кодом|пин|пароль|пароля|карта|карты|ओटीपी|कोड|पिन|पासवर्ड|खाता)(?![\p{L}\p{M}])"""
     )
     private val CODE_RUN = Regex(
-        """(?<![\p{L}\d.,:/$€£¥₹+\-])([Xx*•]{2,})?(\d{2,}(?:[ -]\d{2,})*)(?![\d.,:%/]?\d)(?![\p{L}%])"""
+        """(?<![\p{L}\d.,:/$€£¥₹+\-])([Xx*•]{2,}[ -]?)?(\d{2,}(?:[ -]\d{2,})*)(?![\d.,:%/]?\d)(?![\p{L}%])"""
     )
-    private val MONEY_BEFORE = Regex("""(?i)(?:[$€£¥₹]|(?<![\p{L}])(?:rs\.?|re\.?|inr|usd|eur|gbp|jpy))\s*$""")
-    private val MONEY_AFTER = Regex("""(?iu)^\s*(?:[€¥₹$£]|(?:rs|rupees?|dollars?|euros?|pounds?|yen|usd|inr|eur|gbp|jpy|paise|cents?)(?![\p{L}]))""")
+    private val DATE_HYPHEN = Regex("""(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}-\d{1,2}-\d{4})""")
+    private val MONEY_BEFORE = Regex("""(?iu)(?:[$€£¥₹]|(?<![\p{L}\p{M}])(?:rs\.?|re\.?|रु\.?|inr|usd|eur|gbp|jpy))\s*$""")
+    private val MONEY_AFTER = Regex("""(?iu)^\s*(?:[€¥₹$£]|(?:rs|rupees?|dollars?|euros?|pounds?|yen|usd|inr|eur|gbp|jpy|paise|cents?|रुपये|रुपया|पैसे|पैसा)(?![\p{L}\p{M}]))""")
 
     private val LEADING_ZERO = Regex("""(?<![\p{L}\d.,:/+\-])(0\d+)(?![\d.,:/\-])""")
 
@@ -29,15 +30,16 @@ object NumberReading {
     private val PRECEDING_ENDING = Regex("""(?i)\b(?:ending|last)\s+$""")
 
     /** Converts OTPs/PINs/masked card suffixes near keywords to spaced digits. */
-    fun readCodes(editor: SpanEditor, englishLabel: Boolean = true) {
+    fun readCodes(editor: SpanEditor, englishLabel: Boolean = true, protectedRanges: List<IntRange> = emptyList()) {
         val snapshot = editor.current.toString()
         if (!hasAsciiDigit(snapshot) || !CODE_KEYWORD.containsMatchIn(snapshot)) return
         editor.replaceMatches(CODE_RUN, protectTtsSpans = true) { m ->
-            val run = m.groupValues[2]
-            val digits = run.count { it in '0'..'9' }
             val start = m.range.first
             val end = m.range.last + 1
-            if (digits !in 4..12 || isMoney(snapshot, start, end) || !keywordNear(snapshot, start, end)) {
+            if (protectedRanges.any { start in it }) return@replaceMatches null
+            val run = m.groupValues[2]
+            val digits = run.count { it in '0'..'9' }
+            if (digits !in 4..12 || DATE_HYPHEN.matches(run) || isMoney(snapshot, start, end) || !keywordNear(snapshot, start, end)) {
                 return@replaceMatches null
             }
             val alreadyEnding = start > 0 && PRECEDING_ENDING.containsMatchIn(snapshot.subSequence((start - 16).coerceAtLeast(0), start))
@@ -55,19 +57,21 @@ object NumberReading {
     }
 
     /** Preserves identifiers with leading zeros (`007` -> `0 0 7`), leaving clock times/dates/decimals alone. */
-    fun preserveLeadingZeros(editor: SpanEditor) {
+    fun preserveLeadingZeros(editor: SpanEditor, protectedRanges: List<IntRange> = emptyList()) {
         if (!hasAsciiDigit(editor.current)) return
         editor.replaceMatches(LEADING_ZERO, protectTtsSpans = true) { m ->
+            if (protectedRanges.any { m.range.first in it }) return@replaceMatches null
             val digits = m.groupValues[1]
             digits.asIterable().joinToString(" ")
         }
     }
 
     /** Expands Indian comma grouping (`12,34,567`), `₹`/`Rs` shorthands (`₹5L`, `2cr`). */
-    fun applyIndianNumbering(editor: SpanEditor, devanagari: Boolean = false) {
+    fun applyIndianNumbering(editor: SpanEditor, devanagari: Boolean = false, protectedRanges: List<IntRange> = emptyList()) {
         val cur = editor.current
         if (!hasAsciiDigit(cur) || !mightHaveIndianNumber(cur)) return
         editor.replaceMatches(INDIAN_CURRENCY, protectTtsSpans = true) { m ->
+            if (protectedRanges.any { m.range.first in it }) return@replaceMatches null
             val rawNum = m.groupValues[1].replace(",", "")
             val scale = m.groupValues[2].lowercase()
             val scaleWord = when (scale) {
@@ -85,18 +89,26 @@ object NumberReading {
             listOf(spoken, scaleWord, unit).filter { it.isNotEmpty() }.joinToString(" ")
         }
         editor.replaceMatches(SHORTHAND_LAKH, protectTtsSpans = true) { m ->
+            if (protectedRanges.any { m.range.first in it }) return@replaceMatches null
             "${m.groupValues[1]} ${if (devanagari) "लाख" else "lakh"}"
         }
         editor.replaceMatches(SHORTHAND_CRORE, protectTtsSpans = true) { m ->
+            if (protectedRanges.any { m.range.first in it }) return@replaceMatches null
             "${m.groupValues[1]} ${if (devanagari) "करोड़" else "crore"}"
         }
         editor.replaceMatches(INDIAN_COMMAS, protectTtsSpans = true) { m ->
+            if (protectedRanges.any { m.range.first in it }) return@replaceMatches null
             indianCommaWords(m.value, devanagari)
         }
     }
 
     /** Formats digit runs of length >= [minLength] in single digits, pairs, or triplets (skipping money). */
-    fun formatDigitGrouping(editor: SpanEditor, mode: DigitGroupingMode, minLength: Int) {
+    fun formatDigitGrouping(
+        editor: SpanEditor,
+        mode: DigitGroupingMode,
+        minLength: Int,
+        protectedRanges: List<IntRange> = emptyList()
+    ) {
         if (mode == DigitGroupingMode.OFF) return
         val cur = editor.current
         if (!hasAsciiDigit(cur)) return
@@ -113,7 +125,10 @@ object NumberReading {
         }
         editor.replaceMatches(DIGIT_RUN, protectTtsSpans = true) { m ->
             val raw = m.value
-            if (raw.length < minLength || isMoney(snapshot, m.range.first, m.range.last + 1)) {
+            if (raw.length < minLength ||
+                protectedRanges.any { m.range.first in it } ||
+                isMoney(snapshot, m.range.first, m.range.last + 1)
+            ) {
                 return@replaceMatches null
             }
             if (groupSize == 1) {

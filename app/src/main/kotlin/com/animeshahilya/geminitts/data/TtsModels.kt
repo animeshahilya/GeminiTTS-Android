@@ -219,12 +219,18 @@ data class VoicePreset(
             val name = map.str("name", "").trim().take(MAX_NAME)
             if (name.isEmpty()) return null
             val base = ReadingStyle.PRESETS.first { it.id == "audiobook" }
+            val rawStyle = map.str("styleId", ReadingStyle.STANDARD)
+            val validStyle = if (rawStyle == ReadingStyle.CUSTOM || ReadingStyle.PRESETS.any { it.id == rawStyle }) {
+                rawStyle
+            } else {
+                ReadingStyle.STANDARD
+            }
             @Suppress("UNCHECKED_CAST")
             val textMap = map["textOptions"] as? Map<String, Any?>
             return VoicePreset(
                 name = name,
                 voiceId = map["voiceId"]?.toString()?.takeIf { it.isNotBlank() },
-                styleId = map.str("styleId", ReadingStyle.STANDARD),
+                styleId = validStyle,
                 customStyle = ReadingStyle.custom(
                     map.float("customSpeed", base.speed).coerceIn(0.5f, 3f),
                     map.float("customPitch", base.pitch).coerceIn(0.5f, 2f),

@@ -200,11 +200,12 @@ class TtsPrefs(context: Context) {
     var presets: List<VoicePreset>
         get() {
             val raw = prefs.getString(KEY_PRESETS, null).orEmpty()
-            if (raw.isEmpty()) return emptyList()
-            return JsonCodec.parseArray(raw).orEmpty().mapNotNull { item ->
+            parsedPresets?.let { (k, v) -> if (k == raw) return v }
+            val list = if (raw.isEmpty()) emptyList() else JsonCodec.parseArray(raw).orEmpty().mapNotNull { item ->
                 @Suppress("UNCHECKED_CAST")
                 (item as? Map<String, Any?>)?.let(VoicePreset::fromMap)
             }
+            return list.also { parsedPresets = raw to it }
         }
         set(value) = prefs.edit {
             putString(KEY_PRESETS, if (value.isEmpty()) null else JsonCodec.stringify(value.map { it.toMap() }))
@@ -440,6 +441,7 @@ class TtsPrefs(context: Context) {
         @Volatile private var parsedTextOptions: Pair<String, TextOptions>? = null
         @Volatile private var parsedLangOverrides: Pair<String, Map<String, LanguageOverride>>? = null
         @Volatile private var parsedAppProfiles: Pair<String, Map<String, AppProfile>>? = null
+        @Volatile private var parsedPresets: Pair<String, List<VoicePreset>>? = null
         @Volatile private var parsedSeenApps: Set<String>? = null
     }
 }

@@ -38,4 +38,18 @@ class DictionaryTest {
         val text = "nothing here"
         assertSame(text, Dictionary(listOf(DictionaryRule("zzz", "y"))).apply(text))
     }
+
+    @Test fun languageScopeHandlesUnderscoreAndSubtags() {
+        val d = Dictionary(
+            listOf(
+                DictionaryRule("colour", "color", language = "en_GB"),
+                DictionaryRule("hello", "hi", language = "en"),
+                DictionaryRule("test", "literal \$1 \\1", wholeWord = true)
+            )
+        )
+        assertEquals("color", d.apply("colour", "en-GB").toString())
+        assertEquals("colour", d.apply("colour", "en-US").toString())
+        assertEquals("hi", d.apply("hello", "en_US").toString())
+        assertEquals("literal \$1 \\1", d.apply("test", "en-US").toString())
+    }
 }

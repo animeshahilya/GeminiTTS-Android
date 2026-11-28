@@ -274,18 +274,22 @@ private fun TextSettingsPage(state: UiState, viewModel: MainScreenViewModel) {
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            OutlinedButton(onClick = {
-                viewModel.updateTextOptions { it.copy(silencedSymbols = (it.silencedSymbols + TextOptions.MARKDOWN_SYMBOLS).toSet().joinToString("")) }
-            }) { Text("+ Markdown") }
-            OutlinedButton(onClick = {
-                viewModel.updateTextOptions { it.copy(silencedSymbols = (it.silencedSymbols + TextOptions.CODE_SYMBOLS).toSet().joinToString("")) }
-            }) { Text("+ Formatting") }
-            OutlinedButton(onClick = {
-                viewModel.updateTextOptions { it.copy(silencedSymbols = (it.silencedSymbols + TextOptions.BULLET_SYMBOLS).toSet().joinToString("")) }
-            }) { Text("+ Bullets") }
-            OutlinedButton(onClick = {
-                viewModel.updateTextOptions { it.copy(silencedSymbols = TextOptions.DEFAULT_SILENCED_SYMBOLS) }
-            }) { Text("Reset") }
+            OutlinedButton(
+                onClick = { viewModel.updateTextOptions { it.copy(silencedSymbols = (it.silencedSymbols + TextOptions.MARKDOWN_SYMBOLS).toSet().joinToString("")) } },
+                modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+            ) { Text("+ Markdown") }
+            OutlinedButton(
+                onClick = { viewModel.updateTextOptions { it.copy(silencedSymbols = (it.silencedSymbols + TextOptions.CODE_SYMBOLS).toSet().joinToString("")) } },
+                modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+            ) { Text("+ Formatting") }
+            OutlinedButton(
+                onClick = { viewModel.updateTextOptions { it.copy(silencedSymbols = (it.silencedSymbols + TextOptions.BULLET_SYMBOLS).toSet().joinToString("")) } },
+                modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+            ) { Text("+ Bullets") }
+            OutlinedButton(
+                onClick = { viewModel.updateTextOptions { it.copy(silencedSymbols = TextOptions.DEFAULT_SILENCED_SYMBOLS) } },
+                modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+            ) { Text("Reset") }
         }
     }
     SwitchRow("Split CamelCase & snake_case", "Reads getUserName as get User Name and user_id as user id.", opts.splitCamelCase) { v ->
@@ -452,6 +456,9 @@ private fun PresetsSettingsPage(state: UiState, viewModel: MainScreenViewModel) 
 private fun UtilitiesSettingsPage(state: UiState, viewModel: MainScreenViewModel) {
     val context = LocalContext.current
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        viewModel.refreshRecentSpeechCount()
+    }
     LaunchedEffect(state.sleepStopAtMs) {
         now = System.currentTimeMillis()
         while (state.sleepStopAtMs > 0L) {
@@ -471,9 +478,18 @@ private fun UtilitiesSettingsPage(state: UiState, viewModel: MainScreenViewModel
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        OutlinedButton(onClick = { viewModel.armSleepTimer(0) }, enabled = state.sleepStopAtMs > 0L) { Text("Off") }
+        OutlinedButton(
+            onClick = { viewModel.armSleepTimer(0) },
+            enabled = state.sleepStopAtMs > 0L,
+            modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+                .semantics { contentDescription = "Turn off sleep timer" }
+        ) { Text("Off") }
         listOf(15, 30, 45, 60).forEach { mins ->
-            FilledTonalButton(onClick = { viewModel.armSleepTimer(mins) }) { Text("${mins}m") }
+            FilledTonalButton(
+                onClick = { viewModel.armSleepTimer(mins) },
+                modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+                    .semantics { contentDescription = "$mins minutes" }
+            ) { Text("${mins}m") }
         }
     }
 

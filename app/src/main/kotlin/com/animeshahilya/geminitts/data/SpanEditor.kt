@@ -49,8 +49,25 @@ class SpanEditor(private val original: CharSequence) {
         protectTtsSpans: Boolean = true,
         transform: (MatchResult) -> CharSequence?
     ) {
-        val matches = regex.findAll(current).toList()
-        if (matches.isEmpty()) return
+        val cur = current
+        val first = regex.find(cur) ?: return
+        val second = first.next()
+        if (second == null) {
+            val start = first.range.first
+            val end = first.range.last + 1
+            if (protectTtsSpans && hasTtsSpanOverlap(start, end)) return
+            val repl = transform(first) ?: return
+            replaceRange(start, end, repl, protectTtsSpans = false)
+            return
+        }
+        val matches = ArrayList<MatchResult>(4).apply {
+            add(first)
+            var next: MatchResult? = second
+            while (next != null) {
+                add(next)
+                next = next.next()
+            }
+        }
         for (i in matches.lastIndex downTo 0) {
             val m = matches[i]
             val start = m.range.first

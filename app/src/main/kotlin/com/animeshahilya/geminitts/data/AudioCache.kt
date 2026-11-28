@@ -49,7 +49,15 @@ class AudioCache private constructor(context: Context) {
             val clip = DataInputStream(file.inputStream().buffered()).use { input ->
                 val rate = input.readInt()
                 val channels = input.readInt()
-                Clip(rate, channels, input.readBytes())
+                val pcm = input.readBytes()
+                if (rate !in 8_000..192_000 || channels !in 1..2 || pcm.isEmpty() || pcm.size > MAX_ENTRY_BYTES) {
+                    return@use null
+                }
+                Clip(rate, channels, pcm)
+            }
+            if (clip == null) {
+                file.delete()
+                return null
             }
             file.setLastModified(System.currentTimeMillis()) // keeps eviction least-recently-used
             memory.put(key, clip)
@@ -65,23 +73,32 @@ class AudioCache private constructor(context: Context) {
         if (clip.pcm.isEmpty() || clip.pcm.size > MAX_ENTRY_BYTES) return
         memory.put(key, clip)
         io.execute {
+            val tmp = File(dir, "$key.tmp")
             try {
-                val tmp = File(dir, "$key.tmp")
                 DataOutputStream(tmp.outputStream().buffered()).use { out ->
                     out.writeInt(clip.sampleRate)
                     out.writeInt(clip.channels)
                     out.write(clip.pcm)
                 }
-                tmp.renameTo(File(dir, key))
+                if (!tmp.renameTo(File(dir, key))) tmp.delete()
                 trimDisk()
             } catch (e: Exception) {
+                tmp.delete()
                 Log.w(TAG, "Failed to save cache entry", e)
             }
         }
     }
 
     private fun trimDisk() {
-        val files = dir.listFiles() ?: return
+        val all = dir.listFiles() ?: return
+        val files = ArrayList<File>(all.size)
+        for (file in all) {
+            if (file.name.endsWith(".tmp")) {
+                file.delete()
+            } else {
+                files += file
+            }
+        }
         var total = files.sumOf { it.length() }
         if (total <= MAX_DISK_BYTES) return
         for (file in files.sortedBy { it.lastModified() }) {
@@ -100,7 +117,7 @@ class AudioCache private constructor(context: Context) {
 
     /** Number of saved phrases and their size on disk. */
     fun stats(): Pair<Int, Long> {
-        val files = dir.listFiles().orEmpty()
+        val files = dir.listFiles()?.filterNot { it.name.endsWith(".tmp") }.orEmpty()
         return files.size to files.sumOf { it.length() }
     }
 

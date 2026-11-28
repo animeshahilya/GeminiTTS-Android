@@ -122,6 +122,7 @@ class PlatformSynth(context: Context) {
         if (installedAt != 0L && now - installedAt < MISS_RECHECK_MS) return null
         if (!awaitReady()) return null
         val voices = runCatching { tts?.voices }.getOrNull() ?: return null
+        if (voices.isEmpty()) return null
         installed = voices
             .filter { TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED !in it.features }
             .associateBy { it.name.removeSuffix("-local").lowercase() }
@@ -201,7 +202,8 @@ class PlatformSynth(context: Context) {
         queues[id] = queue
         var result = engine.synthesizeToFile(text, params, sink, id)
         if (result != TextToSpeech.SUCCESS && sink.path == "/dev/null") {
-            sink = File(appContext.cacheDir, "synth-sink.wav")
+            val dpCache = appContext.createDeviceProtectedStorageContext().cacheDir
+            sink = File(dpCache, "synth-sink.wav")
             result = engine.synthesizeToFile(text, params, sink, id)
         }
         if (result != TextToSpeech.SUCCESS) {
@@ -250,6 +252,7 @@ class PlatformSynth(context: Context) {
     fun shutdown() {
         runCatching { tts?.shutdown() }
         tts = null
+        if (sink.path != "/dev/null") runCatching { sink.delete() }
     }
 
     companion object {

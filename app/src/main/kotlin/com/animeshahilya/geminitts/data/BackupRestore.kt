@@ -170,9 +170,9 @@ object BackupRestore {
                 r.wholeWord -> "2"
                 else -> "0"
             }
-            append(r.pattern.replace('\t', ' ').replace('\n', ' '))
+            append(r.pattern.replace('\t', ' ').replace('\n', ' ').replace('\r', ' '))
             append('\t')
-            append(r.replacement.replace('\t', ' ').replace('\n', ' '))
+            append(r.replacement.replace('\t', ' ').replace('\n', ' ').replace('\r', ' '))
             append('\t').append(cs)
             append('\t').appendLine(type)
         }

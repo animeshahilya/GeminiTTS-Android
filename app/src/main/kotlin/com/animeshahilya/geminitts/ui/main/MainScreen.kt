@@ -134,23 +134,29 @@ fun MainScreen(viewModel: MainScreenViewModel = viewModel()) {
                     }
                 }
                 key(tab) {
-                    Column(
-                        Modifier
-                            .fillMaxSize()
-                            .semantics { paneTitle = tabs[tab] }
-                            .verticalScroll(rememberScrollState())
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        when (tab) {
-                            0 -> VoiceTab(state, viewModel, onOpenSettings = { settingsPage = SettingsPage.HUB })
-                            1 -> LanguagesTab(state, viewModel)
-                            else -> DictionaryTab(
-                                state = state,
-                                viewModel = viewModel,
-                                onImportDic = { importDicLauncher.launch(arrayOf("*/*")) },
-                                onExportDic = { exportDicLauncher.launch("gemini-tts-dictionary.dic") }
-                            )
+                    if (tab == 2) {
+                        DictionaryTab(
+                            state = state,
+                            viewModel = viewModel,
+                            onImportDic = { importDicLauncher.launch(arrayOf("*/*")) },
+                            onExportDic = { exportDicLauncher.launch("gemini-tts-dictionary.dic") },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .semantics { paneTitle = tabs[tab] }
+                        )
+                    } else {
+                        Column(
+                            Modifier
+                                .fillMaxSize()
+                                .semantics { paneTitle = tabs[tab] }
+                                .verticalScroll(rememberScrollState())
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            when (tab) {
+                                0 -> VoiceTab(state, viewModel, onOpenSettings = { settingsPage = SettingsPage.HUB })
+                                else -> LanguagesTab(state, viewModel)
+                            }
                         }
                     }
                 }

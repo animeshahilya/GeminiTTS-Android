@@ -128,9 +128,14 @@ class LeadingSilenceTrimmer(
                 while (pos >= start && isQuietFrame(pcm, pos, channels, threshold)) {
                     pos -= frameBytes
                 }
-                val pad = (sampleRateHz * POST_PAD_MS / 1000) * frameBytes
-                end = minOf(validLen, pos + frameBytes + pad)
-                end = (end / frameBytes) * frameBytes
+                if (pos >= start) {
+                    val pad = (sampleRateHz * POST_PAD_MS / 1000) * frameBytes
+                    end = minOf(validLen, pos + frameBytes + pad)
+                    end = (end / frameBytes) * frameBytes
+                } else {
+                    // No loud frame existed in [start, validLen); keep original audio untouched.
+                    start = 0
+                }
             }
 
             return if (start == 0 && end == pcm.size) pcm else if (end <= start) EMPTY else pcm.copyOfRange(start, end)

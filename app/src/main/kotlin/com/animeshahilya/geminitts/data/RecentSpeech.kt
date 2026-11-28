@@ -28,6 +28,7 @@ object RecentSpeech {
             kept = kept.substring(0, end)
         }
         synchronized(itemsDeque) {
+            pruneExpiredLocked(nowMs)
             itemsDeque.removeAll { it.text == kept }
             itemsDeque.addFirst(Item(kept, nowMs))
             while (itemsDeque.size > MAX_ITEMS) itemsDeque.removeLast()
@@ -35,12 +36,19 @@ object RecentSpeech {
     }
 
     fun items(nowMs: Long = System.currentTimeMillis(), beforeMs: Long = Long.MAX_VALUE): List<Item> = synchronized(itemsDeque) {
+        pruneExpiredLocked(nowMs)
         val out = ArrayList<Item>()
         for (item in itemsDeque) {
             if (nowMs - item.atMs > KEEP_MS) break
             if (item.atMs < beforeMs) out += item
         }
         out
+    }
+
+    private fun pruneExpiredLocked(nowMs: Long) {
+        while (itemsDeque.isNotEmpty() && nowMs - itemsDeque.last().atMs > KEEP_MS) {
+            itemsDeque.removeLast()
+        }
     }
 
     fun clear() {

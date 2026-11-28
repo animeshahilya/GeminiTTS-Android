@@ -249,7 +249,7 @@ class RecentSpeechActivity : ComponentActivity() {
         var end = chars.next()
         while (end != BreakIterator.DONE && out.size < MAX_SPELL_CHARS) {
             val ch = text.substring(start, end)
-            val mappedByDict = dict.apply(ch, langTag).toString() != ch
+            val mappedByDict = dict.apply(ch, langTag, isSingleChar = true).toString() != ch
             out += if (mappedByDict) ch else spokenSpellToken(ch)
             start = end
             end = chars.next()
@@ -328,14 +328,31 @@ class RecentSpeechActivity : ComponentActivity() {
             "`" to "backtick",
             "|" to "pipe",
             "<" to "less than",
-            ">" to "greater than"
+            ">" to "greater than",
+            "^" to "caret",
+            "…" to "ellipsis",
+            "—" to "em dash",
+            "–" to "en dash",
+            "•" to "bullet",
+            "°" to "degree",
+            "₹" to "rupee",
+            "€" to "euro",
+            "£" to "pound",
+            "¥" to "yen"
         )
 
-        /** Maps raw punctuation (which GenAI voices skip) and uppercase ASCII letters to spoken tokens. */
+        /** Maps raw punctuation (which GenAI voices skip), whitespace, and uppercase letters to spoken tokens. */
         fun spokenSpellToken(ch: String): String {
+            when (ch) {
+                " " -> return "space"
+                "\n", "\r\n", "\r" -> return "new line"
+                "\t" -> return "tab"
+            }
             if (ch.isBlank()) return ch
             SPELL_SYMBOLS[ch]?.let { return it }
-            if (ch.length == 1 && ch[0] in 'A'..'Z') return "capital $ch"
+            if (ch.codePointCount(0, ch.length) == 1 && Character.isUpperCase(ch.codePointAt(0))) {
+                return "capital $ch"
+            }
             return ch
         }
     }
