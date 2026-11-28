@@ -70,4 +70,15 @@ class ReadingStyleTest {
     @Test fun lowercaseSingleLetterIsNotAbbreviation() {
         assertEquals(listOf("Option a." to 300, "Next." to 0), split("Option a. Next."))
     }
+
+    @Test fun styleHelpersClampAndSanitize() {
+        val clamped = ReadingStyle.custom(speed = 9f, pitch = 0.1f, sentencePauseMs = -10, paragraphPauseMs = 9999)
+        assertEquals(3f, clamped.speed, 0.001f)
+        assertEquals(0.5f, clamped.pitch, 0.001f)
+        assertEquals(0, clamped.sentencePauseMs)
+        assertEquals(3000, clamped.paragraphPauseMs)
+        assertEquals(ReadingStyle.STANDARD, ReadingStyle.sanitizeId("unknown"))
+        assertEquals(ReadingStyle.CUSTOM, ReadingStyle.sanitizeId(ReadingStyle.CUSTOM))
+        assertEquals(clamped, ReadingStyle.resolve(ReadingStyle.CUSTOM, clamped))
+    }
 }

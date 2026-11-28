@@ -6,6 +6,7 @@ import android.content.Intent
 import android.provider.Settings
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,16 +14,25 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -109,6 +119,90 @@ fun CheckboxRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
 }
 
 @Composable
+fun <T> RadioOptionGroup(
+    options: List<T>,
+    isSelected: (T) -> Boolean,
+    onSelect: (T) -> Unit,
+    label: (T) -> String,
+    summary: (T) -> String,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier.selectableGroup()) {
+        options.forEach { item ->
+            val selected = isSelected(item)
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = 48.dp)
+                    .selectable(
+                        selected = selected,
+                        onClick = { onSelect(item) },
+                        role = Role.RadioButton
+                    )
+                    .padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                RadioButton(selected = selected, onClick = null)
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(label(item))
+                    Text(summary(item), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun <T> DropdownSelector(
+    label: String,
+    options: List<T>,
+    itemLabel: (T) -> String,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var open by remember { mutableStateOf(false) }
+    Box(modifier) {
+        OutlinedButton(onClick = { open = true }, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) {
+            Text(label)
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(itemLabel(option)) },
+                    onClick = { onSelect(option); open = false }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun OverrideSliders(
+    prefix: String,
+    speed: Float,
+    pitch: Float,
+    volume: Float,
+    onSpeedChange: (Float) -> Unit,
+    onPitchChange: (Float) -> Unit,
+    onVolumeChange: (Float) -> Unit
+) {
+    FactorSlider("$prefix speed", speed, 0.5f..2.5f, step = 0.05f, defaultValue = 1f, onChange = onSpeedChange)
+    FactorSlider("$prefix pitch", pitch, 0.5f..2f, step = 0.05f, defaultValue = 1f, onChange = onPitchChange)
+    PercentSlider("$prefix volume", (volume * 100).roundToInt(), 25..200, step = 5, defaultPercent = 100) {
+        onVolumeChange(it / 100f)
+    }
+}
+
+fun formatFactor(factor: Float): String = "%.2fx".format(Locale.ROOT, factor)
+
+fun formatOverrideFactors(speed: Float, pitch: Float, volume: Float): List<String> = listOfNotNull(
+    if (speed != 1f) "${formatFactor(speed)} speed" else null,
+    if (pitch != 1f) "${formatFactor(pitch)} pitch" else null,
+    if (volume != 1f) "${(volume * 100).roundToInt()}% vol" else null
+)
+
+@Composable
 fun FactorSlider(
     label: String,
     value: Float,
@@ -118,7 +212,7 @@ fun FactorSlider(
     onChange: (Float) -> Unit
 ) {
     val clamped = value.coerceIn(range.start, range.endInclusive)
-    val shown = "%.2fx".format(Locale.ROOT, clamped)
+    val shown = formatFactor(clamped)
     fun snap(v: Float): Float {
         val stepped = ((v / step).roundToInt() * step).coerceIn(range.start, range.endInclusive)
         return (stepped * 1000f).roundToInt() / 1000f

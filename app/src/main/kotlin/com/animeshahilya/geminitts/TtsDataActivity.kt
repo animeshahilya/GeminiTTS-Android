@@ -18,9 +18,8 @@ class TtsDataActivity : Activity() {
         when (intent?.action) {
             TextToSpeech.Engine.ACTION_CHECK_TTS_DATA -> {
                 val prefs = TtsPrefs(this)
-                val allLocales = prefs.voices.map { it.locale }.distinct()
-                val enabled = allLocales.filter { prefs.isLocaleEnabled(it) }.ifEmpty { allLocales }
-                val locales = enabled.ifEmpty { listOf(GenAiVoices.DEFAULT_LOCALE) }
+                val locales = prefs.enabledVoices().map { it.locale }.distinct()
+                    .ifEmpty { listOf(GenAiVoices.DEFAULT_LOCALE) }
                 val available = locales.map { it.ttsCode() }.distinct()
                 setResult(
                     TextToSpeech.Engine.CHECK_VOICE_DATA_PASS,

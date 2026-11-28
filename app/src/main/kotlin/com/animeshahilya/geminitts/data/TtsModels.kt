@@ -124,6 +124,11 @@ data class LanguageOverride(
     )
 
     companion object {
+        fun parseMap(items: List<*>): Map<String, LanguageOverride> =
+            LinkedHashMap<String, LanguageOverride>().apply {
+                for (ov in items.mapObjects(::fromMap)) put(ov.localeTag, ov)
+            }
+
         fun fromMap(map: Map<String, Any?>): LanguageOverride? {
             val tag = map.str("localeTag", "").trim()
             if (tag.isEmpty()) return null
@@ -162,6 +167,11 @@ data class AppProfile(
     )
 
     companion object {
+        fun parseMap(items: List<*>): Map<String, AppProfile> =
+            LinkedHashMap<String, AppProfile>().apply {
+                for (profile in items.mapObjects(::fromMap)) put(profile.packageName, profile)
+            }
+
         fun fromMap(map: Map<String, Any?>): AppProfile? {
             val pkg = map.str("packageName", "").trim()
             if (pkg.isEmpty()) return null
@@ -215,16 +225,13 @@ data class VoicePreset(
     companion object {
         const val MAX_NAME = 40
 
+        fun parseList(items: List<*>): List<VoicePreset> = items.mapObjects(::fromMap)
+
         fun fromMap(map: Map<String, Any?>): VoicePreset? {
             val name = map.str("name", "").trim().take(MAX_NAME)
             if (name.isEmpty()) return null
-            val base = ReadingStyle.PRESETS.first { it.id == "audiobook" }
-            val rawStyle = map.str("styleId", ReadingStyle.STANDARD)
-            val validStyle = if (rawStyle == ReadingStyle.CUSTOM || ReadingStyle.PRESETS.any { it.id == rawStyle }) {
-                rawStyle
-            } else {
-                ReadingStyle.STANDARD
-            }
+            val base = ReadingStyle.DEFAULT_CUSTOM_BASE
+            val validStyle = ReadingStyle.sanitizeId(map.str("styleId", ReadingStyle.STANDARD))
             @Suppress("UNCHECKED_CAST")
             val textMap = map["textOptions"] as? Map<String, Any?>
             return VoicePreset(
@@ -232,10 +239,10 @@ data class VoicePreset(
                 voiceId = map["voiceId"]?.toString()?.takeIf { it.isNotBlank() },
                 styleId = validStyle,
                 customStyle = ReadingStyle.custom(
-                    map.float("customSpeed", base.speed).coerceIn(0.5f, 3f),
-                    map.float("customPitch", base.pitch).coerceIn(0.5f, 2f),
-                    map.int("customSentenceMs", base.sentencePauseMs).coerceIn(0, 1500),
-                    map.int("customParagraphMs", base.paragraphPauseMs).coerceIn(0, 3000)
+                    map.float("customSpeed", base.speed),
+                    map.float("customPitch", base.pitch),
+                    map.int("customSentenceMs", base.sentencePauseMs),
+                    map.int("customParagraphMs", base.paragraphPauseMs)
                 ),
                 baseSpeed = map.float("baseSpeed", 1f).coerceIn(0.5f, 3.5f),
                 basePitch = map.float("basePitch", 1f).coerceIn(0.5f, 2f),
@@ -249,6 +256,11 @@ data class VoicePreset(
             )
         }
     }
+}
+
+internal inline fun <T> List<*>.mapObjects(transform: (Map<String, Any?>) -> T?): List<T> = mapNotNull { item ->
+    @Suppress("UNCHECKED_CAST")
+    (item as? Map<String, Any?>)?.let(transform)
 }
 
 internal fun Map<String, Any?>.str(key: String, default: String): String =

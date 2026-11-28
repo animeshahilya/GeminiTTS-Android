@@ -125,19 +125,29 @@ class PcmProcessor(
     }
 
     private fun emit(bytes: ByteArray, offset: Int, length: Int) {
-        var sent = 0
         val opt = optimizer
+        if (opt == null) {
+            writeChunked(bytes, offset, length)
+            return
+        }
+        var sent = 0
         while (sent < length) {
             checkCancelled()
             val chunk = minOf(buffer.size, length - sent)
-            if (opt != null) {
-                // Copy into buffer so cached PCM arrays passed to pcm() are never mutated in place.
-                System.arraycopy(bytes, offset + sent, buffer, 0, chunk)
-                opt.process(buffer, 0, chunk)
-                callback.audioAvailable(buffer, 0, chunk)
-            } else {
-                callback.audioAvailable(bytes, offset + sent, chunk)
-            }
+            // Copy into buffer so cached PCM arrays passed to pcm() are never mutated in place.
+            System.arraycopy(bytes, offset + sent, buffer, 0, chunk)
+            opt.process(buffer, 0, chunk)
+            callback.audioAvailable(buffer, 0, chunk)
+            sent += chunk
+        }
+    }
+
+    private fun writeChunked(bytes: ByteArray, offset: Int, length: Int) {
+        var sent = 0
+        while (sent < length) {
+            checkCancelled()
+            val chunk = minOf(buffer.size, length - sent)
+            callback.audioAvailable(bytes, offset + sent, chunk)
             sent += chunk
         }
     }
@@ -170,13 +180,7 @@ class PcmProcessor(
             drain(it)
         }
         optimizer?.generateTrailingFade()?.let { fade ->
-            var offset = 0
-            while (offset < fade.size) {
-                checkCancelled()
-                val chunk = minOf(buffer.size, fade.size - offset)
-                callback.audioAvailable(fade, offset, chunk)
-                offset += chunk
-            }
+            writeChunked(fade, 0, fade.size)
         }
         callback.done()
     }

@@ -48,9 +48,9 @@ fun MainScreen(viewModel: MainScreenViewModel = viewModel()) {
     val tabs = listOf("Voice", "Languages", "Dictionary")
     val snackbarHostState = remember { SnackbarHostState() }
 
-    BackHandler(enabled = settingsPage != null) {
-        settingsPage = if (settingsPage == SettingsPage.HUB) null else SettingsPage.HUB
-    }
+    val navigateBack = { settingsPage = if (settingsPage == SettingsPage.HUB) null else SettingsPage.HUB }
+
+    BackHandler(enabled = settingsPage != null, onBack = navigateBack)
 
     val exportBackupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -95,7 +95,7 @@ fun MainScreen(viewModel: MainScreenViewModel = viewModel()) {
                     title = { Text(activeSettings.title) },
                     navigationIcon = {
                         TextButton(
-                            onClick = { settingsPage = if (activeSettings == SettingsPage.HUB) null else SettingsPage.HUB },
+                            onClick = navigateBack,
                             modifier = Modifier.defaultMinSize(minHeight = 48.dp)
                         ) { Text("Back") }
                     }

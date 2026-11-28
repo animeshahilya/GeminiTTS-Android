@@ -14,6 +14,9 @@ data class DictionaryRule(
         return if (isRegex) SafeRegex.validate(pattern) == null else true
     }
 
+    fun conflictsWith(other: DictionaryRule): Boolean =
+        pattern == other.pattern && language == other.language && isCharacter == other.isCharacter
+
     fun appliesToLanguage(langTag: String): Boolean {
         val scope = language.trim().replace('_', '-').lowercase()
         if (scope.isEmpty()) return true

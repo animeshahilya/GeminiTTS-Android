@@ -111,9 +111,7 @@ class GenAiTtsService : TextToSpeechService() {
         return arrayOf(locale.iso3Language(), locale.iso3Country(), "")
     }
 
-    override fun onGetVoices(): List<Voice> = prefs.voices
-        .filter { prefs.isLocaleEnabled(it.locale) }
-        .ifEmpty { prefs.voices }
+    override fun onGetVoices(): List<Voice> = prefs.enabledVoices()
         .map { entry ->
             val features = if (synth.installedVoice(entry.name) == null) {
                 setOf(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)

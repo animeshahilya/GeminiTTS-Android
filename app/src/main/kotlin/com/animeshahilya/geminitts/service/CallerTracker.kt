@@ -31,14 +31,16 @@ object CallerTracker {
         return if ("android" in packages) "android" else packages.min()
     }
 
-    /** True when [packageName] belongs to an enabled spoken-feedback accessibility service (e.g. TalkBack). */
-    fun isSpokenAccessibilityService(context: Context, packageName: String?): Boolean {
-        if (packageName.isNullOrEmpty()) return false
-        val am = context.getSystemService(AccessibilityManager::class.java) ?: return false
-        return am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_SPOKEN).any { info ->
-            info.resolveInfo?.serviceInfo?.packageName == packageName
-        }
+    /** Package names of currently enabled spoken-feedback accessibility services (e.g. TalkBack). */
+    fun spokenAccessibilityPackages(context: Context): Set<String> {
+        val am = context.getSystemService(AccessibilityManager::class.java) ?: return emptySet()
+        return am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_SPOKEN)
+            .mapNotNullTo(HashSet()) { it.resolveInfo?.serviceInfo?.packageName }
     }
+
+    /** True when [packageName] belongs to an enabled spoken-feedback accessibility service (e.g. TalkBack). */
+    fun isSpokenAccessibilityService(context: Context, packageName: String?): Boolean =
+        !packageName.isNullOrEmpty() && packageName in spokenAccessibilityPackages(context)
 
     /** Human-readable app name for [packageName], falling back to the package name itself. */
     fun appLabel(context: Context, packageName: String): String {

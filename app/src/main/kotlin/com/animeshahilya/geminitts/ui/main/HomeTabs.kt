@@ -3,7 +3,6 @@ package com.animeshahilya.geminitts.ui.main
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -22,8 +21,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -57,7 +54,6 @@ import com.animeshahilya.geminitts.data.LanguageOverride
 import com.animeshahilya.geminitts.data.ReadingStyle
 import com.animeshahilya.geminitts.data.label
 import java.util.Locale
-import kotlin.math.roundToInt
 
 @Composable
 fun VoiceTab(state: UiState, viewModel: MainScreenViewModel, onOpenSettings: () -> Unit) {
@@ -134,29 +130,13 @@ fun VoiceTab(state: UiState, viewModel: MainScreenViewModel, onOpenSettings: () 
 
     SectionTitle("Reading style")
     Text("Applies across apps, voices and languages unless overridden.", style = MaterialTheme.typography.bodySmall)
-    Column(Modifier.selectableGroup()) {
-        (ReadingStyle.PRESETS + state.customStyle).forEach { style ->
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .defaultMinSize(minHeight = 48.dp)
-                    .selectable(
-                        selected = style.id == state.styleId,
-                        onClick = { viewModel.setStyle(style.id) },
-                        role = Role.RadioButton
-                    )
-                    .padding(vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                RadioButton(selected = style.id == state.styleId, onClick = null)
-                Spacer(Modifier.width(12.dp))
-                Column {
-                    Text(style.name)
-                    Text(style.description, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        }
-    }
+    RadioOptionGroup(
+        options = ReadingStyle.all(state.customStyle),
+        isSelected = { it.id == state.styleId },
+        onSelect = { viewModel.setStyle(it.id) },
+        label = { it.name },
+        summary = { it.description }
+    )
     if (state.styleId == ReadingStyle.CUSTOM) {
         val c = state.customStyle
         FactorSlider("Style speed", c.speed, 0.5f..3f, step = 0.05f, defaultValue = 1f) {
@@ -209,21 +189,12 @@ fun VoiceTab(state: UiState, viewModel: MainScreenViewModel, onOpenSettings: () 
                         modifier = Modifier.fillMaxWidth()
                     )
                     if (state.languages.isNotEmpty()) {
-                        var open by remember { mutableStateOf(false) }
-                        Box {
-                            OutlinedButton(
-                                onClick = { open = true },
-                                modifier = Modifier.defaultMinSize(minHeight = 48.dp)
-                            ) { Text("Language: ${state.testLocale.label()}") }
-                            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-                                state.languages.forEach { row ->
-                                    DropdownMenuItem(
-                                        text = { Text(row.locale.label()) },
-                                        onClick = { viewModel.setTestLocale(row.locale); open = false }
-                                    )
-                                }
-                            }
-                        }
+                        DropdownSelector(
+                            label = "Language: ${state.testLocale.label()}",
+                            options = state.languages,
+                            itemLabel = { it.locale.label() },
+                            onSelect = { viewModel.setTestLocale(it.locale) }
+                        )
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Button(
@@ -283,13 +254,9 @@ fun LanguagesTab(state: UiState, viewModel: MainScreenViewModel) {
             is ModelStatus.Unavailable -> s.reason
         }
         val overrideSummary = ov?.let {
-            val parts = listOfNotNull(
-                it.voiceId,
-                if (it.speed != 1f) "${"%.2fx".format(Locale.ROOT, it.speed)} speed" else null,
-                if (it.pitch != 1f) "${"%.2fx".format(Locale.ROOT, it.pitch)} pitch" else null,
-                if (it.volume != 1f) "${(it.volume * 100).roundToInt()}% vol" else null,
-                if (!it.enabled) "hidden" else null
-            )
+            val parts = listOfNotNull(it.voiceId) +
+                formatOverrideFactors(it.speed, it.pitch, it.volume) +
+                listOfNotNull(if (!it.enabled) "hidden" else null)
             if (parts.isEmpty()) null else " (${parts.joinToString(", ")})"
         }.orEmpty()
         Row(
@@ -336,29 +303,27 @@ private fun LanguageOverrideDialog(
     var pitch by remember { mutableFloatStateOf(initial.pitch) }
     var volume by remember { mutableFloatStateOf(initial.volume) }
     var enabled by remember { mutableStateOf(initial.enabled) }
-    var voiceMenuOpen by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(locale.label(), modifier = Modifier.semantics { heading() }) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box {
-                    OutlinedButton(onClick = { voiceMenuOpen = true }, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) {
-                        Text("Voice: ${voiceId ?: "Global default"}")
-                    }
-                    DropdownMenu(expanded = voiceMenuOpen, onDismissRequest = { voiceMenuOpen = false }) {
-                        DropdownMenuItem(text = { Text("Global default") }, onClick = { voiceId = null; voiceMenuOpen = false })
-                        voices.forEach { v ->
-                            DropdownMenuItem(text = { Text(describeVoice(v.id, v.gender)) }, onClick = { voiceId = v.id; voiceMenuOpen = false })
-                        }
-                    }
-                }
-                FactorSlider("Language speed", speed, 0.5f..2.5f, step = 0.05f, defaultValue = 1f) { speed = it }
-                FactorSlider("Language pitch", pitch, 0.5f..2f, step = 0.05f, defaultValue = 1f) { pitch = it }
-                PercentSlider("Language volume", (volume * 100).roundToInt(), 25..200, step = 5, defaultPercent = 100) {
-                    volume = it / 100f
-                }
+                DropdownSelector(
+                    label = "Voice: ${voiceId ?: "Global default"}",
+                    options = listOf<VoiceChoice?>(null) + voices,
+                    itemLabel = { it?.let { v -> describeVoice(v.id, v.gender) } ?: "Global default" },
+                    onSelect = { voiceId = it?.id }
+                )
+                OverrideSliders(
+                    prefix = "Language",
+                    speed = speed,
+                    pitch = pitch,
+                    volume = volume,
+                    onSpeedChange = { speed = it },
+                    onPitchChange = { pitch = it },
+                    onVolumeChange = { volume = it }
+                )
                 SwitchRow("Show in system language list", "Keep this language visible to Android TTS settings.", enabled) { enabled = it }
             }
         },
@@ -561,7 +526,6 @@ private fun RuleEditorDialog(
     var caseSensitive by remember { mutableStateOf(initial.caseSensitive) }
     var isCharacter by remember { mutableStateOf(initial.isCharacter) }
     var language by remember { mutableStateOf(initial.language) }
-    var langOpen by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
@@ -589,18 +553,12 @@ private fun RuleEditorDialog(
                 }
                 CheckboxRow("Case sensitive", caseSensitive) { caseSensitive = it }
                 CheckboxRow("Single character / spelling only", isCharacter) { isCharacter = it }
-                Box {
-                    OutlinedButton(onClick = { langOpen = true }, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) {
-                        Text("Language: ${if (language.isEmpty()) "All languages" else language}")
-                    }
-                    DropdownMenu(expanded = langOpen, onDismissRequest = { langOpen = false }) {
-                        DropdownMenuItem(text = { Text("All languages") }, onClick = { language = ""; langOpen = false })
-                        languages.forEach { row ->
-                            val tag = row.locale.toLanguageTag()
-                            DropdownMenuItem(text = { Text("${row.locale.label()} ($tag)") }, onClick = { language = tag; langOpen = false })
-                        }
-                    }
-                }
+                DropdownSelector(
+                    label = "Language: ${if (language.isEmpty()) "All languages" else language}",
+                    options = listOf<LanguageRow?>(null) + languages,
+                    itemLabel = { row -> row?.let { "${it.locale.label()} (${it.locale.toLanguageTag()})" } ?: "All languages" },
+                    onSelect = { row -> language = row?.locale?.toLanguageTag().orEmpty() }
+                )
                 error?.let {
                     Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
                 }

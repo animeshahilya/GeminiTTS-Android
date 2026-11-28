@@ -47,6 +47,7 @@ class SpanEditor(private val original: CharSequence) {
     inline fun replaceMatches(
         regex: Regex,
         protectTtsSpans: Boolean = true,
+        excludedRanges: List<IntRange> = emptyList(),
         transform: (MatchResult) -> CharSequence?
     ) {
         val cur = current
@@ -55,6 +56,7 @@ class SpanEditor(private val original: CharSequence) {
         if (second == null) {
             val start = first.range.first
             val end = first.range.last + 1
+            if (excludedRanges.isNotEmpty() && excludedRanges.any { start in it }) return
             if (protectTtsSpans && hasTtsSpanOverlap(start, end)) return
             val repl = transform(first) ?: return
             replaceRange(start, end, repl, protectTtsSpans = false)
@@ -72,6 +74,7 @@ class SpanEditor(private val original: CharSequence) {
             val m = matches[i]
             val start = m.range.first
             val end = m.range.last + 1
+            if (excludedRanges.isNotEmpty() && excludedRanges.any { start in it }) continue
             if (protectTtsSpans && hasTtsSpanOverlap(start, end)) continue
             val repl = transform(m) ?: continue
             replaceRange(start, end, repl, protectTtsSpans = false)

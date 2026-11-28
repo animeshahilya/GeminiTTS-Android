@@ -373,13 +373,14 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
             val seen = prefs.seenApps
             val profiles = prefs.appProfiles.keys
             val discovered = CallerTracker.discoverableApps(app)
+            val spokenPkgs = CallerTracker.spokenAccessibilityPackages(app)
             val merged = LinkedHashMap<String, AppEntry>()
             for ((pkg, label) in discovered) {
-                merged[pkg] = AppEntry(pkg, label, CallerTracker.isSpokenAccessibilityService(app, pkg))
+                merged[pkg] = AppEntry(pkg, label, pkg in spokenPkgs)
             }
             for (pkg in seen + profiles) {
                 if (pkg !in merged) {
-                    merged[pkg] = AppEntry(pkg, CallerTracker.appLabel(app, pkg), CallerTracker.isSpokenAccessibilityService(app, pkg))
+                    merged[pkg] = AppEntry(pkg, CallerTracker.appLabel(app, pkg), pkg in spokenPkgs)
                 }
             }
             val sorted = merged.values.sortedWith(compareBy({ !it.isScreenReader }, { it.packageName !in profiles }, { it.label.lowercase() }))
@@ -540,9 +541,7 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
         }
         val clean = updatedRule.copy(pattern = p, language = updatedRule.language.trim())
         val baseList = if (existing != null) _state.value.rules.filterNot { it == existing } else _state.value.rules
-        val next = baseList.filterNot {
-            it.pattern == clean.pattern && it.language == clean.language && it.isCharacter == clean.isCharacter
-        } + clean
+        val next = baseList.filterNot { it.conflictsWith(clean) } + clean
         prefs.rules = next
         _state.update { it.copy(rules = next) }
         return null
@@ -554,19 +553,22 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
         _state.update { it.copy(rules = updated) }
     }
 
-    fun exportBackupToUri(uri: Uri) {
+    private fun writeTextToUri(uri: Uri, successMessage: String, generate: () -> String) {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
-                val json = BackupRestore.exportBackupJson(prefs)
-                app.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(json) }
+                val content = generate()
+                app.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(content) }
                     ?: error("Could not open file for writing.")
             }.onSuccess {
-                _state.update { it.copy(statusMessage = "Settings and dictionary exported.") }
+                _state.update { it.copy(statusMessage = successMessage) }
             }.onFailure { e ->
                 _state.update { it.copy(statusMessage = "Export failed: ${e.localizedMessage}") }
             }
         }
     }
+
+    fun exportBackupToUri(uri: Uri) =
+        writeTextToUri(uri, "Settings and dictionary exported.") { BackupRestore.exportBackupJson(prefs) }
 
     private fun readBoundedText(uri: Uri, maxChars: Int = BackupRestore.MAX_IMPORT_CHARS): String {
         val stream = app.contentResolver.openInputStream(uri) ?: error("Could not read selected file.")
@@ -603,28 +605,15 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    fun exportNvdaDicToUri(uri: Uri) {
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching {
-                val content = BackupRestore.formatNvdaDic(prefs.rules)
-                app.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(content) }
-                    ?: error("Could not open file for writing.")
-            }.onSuccess {
-                _state.update { it.copy(statusMessage = "NVDA .dic dictionary exported.") }
-            }.onFailure { e ->
-                _state.update { it.copy(statusMessage = "Export failed: ${e.localizedMessage}") }
-            }
-        }
-    }
+    fun exportNvdaDicToUri(uri: Uri) =
+        writeTextToUri(uri, "NVDA .dic dictionary exported.") { BackupRestore.formatNvdaDic(prefs.rules) }
 
     fun importNvdaDicFromUri(uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
                 val raw = readBoundedText(uri)
                 val imported = BackupRestore.parseNvdaDic(raw)
-                val merged = (prefs.rules.filterNot { existing ->
-                    !existing.isCharacter && imported.any { it.pattern == existing.pattern && it.language == existing.language }
-                } + imported)
+                val merged = prefs.rules.filterNot { existing -> imported.any { it.conflictsWith(existing) } } + imported
                 prefs.rules = merged
                 imported.size
             }.onSuccess { count ->

@@ -94,7 +94,8 @@ object TextPipeline {
                 "${m.groupValues[1]} ${m.groupValues[2]}"
             }
         }
-        if (editor.current.indexOf(':') >= 0 && (languageTag.startsWith("hi", true) || containsDevanagari(editor.current))) {
+        val isHindi = languageTag.startsWith("hi", ignoreCase = true)
+        if (editor.current.indexOf(':') >= 0 && (isHindi || containsDevanagari(editor.current))) {
             editor.replaceMatches(VISARGA_COLON, protectTtsSpans = true) { m ->
                 val word = m.groupValues[1]
                 if (word.isEmpty()) "ः" else "$wordः"
@@ -116,19 +117,15 @@ object TextPipeline {
         // 4. Chat/Markdown/Tech/Code normalizations (URL shortening runs after numbers & CamelCase so URL tokens don't get altered).
         val englishOrUnset = languageTag.isEmpty() || languageTag.startsWith("en", ignoreCase = true)
         if (options.cleanMarkdown) cleanMarkdown(work, englishLabels = englishOrUnset)
-        if (options.normalizeTechWords && (englishOrUnset || languageTag.startsWith("hi", ignoreCase = true))) {
+        if (options.normalizeTechWords && (englishOrUnset || isHindi)) {
             normalizeTechWords(work)
         }
         if (options.splitCamelCase) splitCamelCase(work)
 
         // 5. Numbers & Codes (TtsSpan-safe; keep URL tokens intact before shortenUrls; Indian currency/commas run before leading-zero & grouping).
         if (options.readCodesDigits) NumberReading.readCodes(work, englishLabel = englishOrUnset, protectedRanges = urlRanges(work.current))
-        if (options.indianNumbering && (englishOrUnset || languageTag.startsWith("hi", ignoreCase = true))) {
-            NumberReading.applyIndianNumbering(
-                work,
-                devanagari = languageTag.startsWith("hi", ignoreCase = true),
-                protectedRanges = urlRanges(work.current)
-            )
+        if (options.indianNumbering && (englishOrUnset || isHindi)) {
+            NumberReading.applyIndianNumbering(work, devanagari = isHindi, protectedRanges = urlRanges(work.current))
         }
         if (options.preserveLeadingZeros) NumberReading.preserveLeadingZeros(work, protectedRanges = urlRanges(work.current))
         if (options.digitGrouping != DigitGroupingMode.OFF) {
@@ -320,9 +317,7 @@ object TextPipeline {
     private fun normalizeTechWords(editor: SpanEditor) {
         val cur = editor.current
         if (!cur.any { it in 'A'..'Z' || it in 'a'..'z' }) return
-        val links = urlRanges(cur)
-        editor.replaceMatches(TECH_REGEX) { m ->
-            if (links.any { m.range.first in it }) return@replaceMatches null
+        editor.replaceMatches(TECH_REGEX, excludedRanges = urlRanges(cur)) { m ->
             for (idx in TECH_REPLACEMENTS.indices) {
                 if (m.groupValues[idx + 1].isNotEmpty()) return@replaceMatches TECH_REPLACEMENTS[idx].second
             }
@@ -332,8 +327,7 @@ object TextPipeline {
 
     private fun splitCamelCase(editor: SpanEditor) {
         for (regex in listOf(CAMEL_LOWER_UPPER, CAMEL_UPPER_RUN, SNAKE_CASE)) {
-            val links = urlRanges(editor.current)
-            editor.replaceMatches(regex) { m -> if (links.any { m.range.first in it }) null else " " }
+            editor.replaceMatches(regex, excludedRanges = urlRanges(editor.current)) { " " }
         }
     }
 

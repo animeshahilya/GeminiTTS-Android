@@ -33,10 +33,9 @@ object NumberReading {
     fun readCodes(editor: SpanEditor, englishLabel: Boolean = true, protectedRanges: List<IntRange> = emptyList()) {
         val snapshot = editor.current.toString()
         if (!hasAsciiDigit(snapshot) || !CODE_KEYWORD.containsMatchIn(snapshot)) return
-        editor.replaceMatches(CODE_RUN, protectTtsSpans = true) { m ->
+        editor.replaceMatches(CODE_RUN, protectTtsSpans = true, excludedRanges = protectedRanges) { m ->
             val start = m.range.first
             val end = m.range.last + 1
-            if (protectedRanges.any { start in it }) return@replaceMatches null
             val run = m.groupValues[2]
             val digits = run.count { it in '0'..'9' }
             if (digits !in 4..12 || DATE_HYPHEN.matches(run) || isMoney(snapshot, start, end) || !keywordNear(snapshot, start, end)) {
@@ -59,8 +58,7 @@ object NumberReading {
     /** Preserves identifiers with leading zeros (`007` -> `0 0 7`), leaving clock times/dates/decimals alone. */
     fun preserveLeadingZeros(editor: SpanEditor, protectedRanges: List<IntRange> = emptyList()) {
         if (!hasAsciiDigit(editor.current)) return
-        editor.replaceMatches(LEADING_ZERO, protectTtsSpans = true) { m ->
-            if (protectedRanges.any { m.range.first in it }) return@replaceMatches null
+        editor.replaceMatches(LEADING_ZERO, protectTtsSpans = true, excludedRanges = protectedRanges) { m ->
             val digits = m.groupValues[1]
             digits.asIterable().joinToString(" ")
         }
@@ -70,8 +68,7 @@ object NumberReading {
     fun applyIndianNumbering(editor: SpanEditor, devanagari: Boolean = false, protectedRanges: List<IntRange> = emptyList()) {
         val cur = editor.current
         if (!hasAsciiDigit(cur) || !mightHaveIndianNumber(cur)) return
-        editor.replaceMatches(INDIAN_CURRENCY, protectTtsSpans = true) { m ->
-            if (protectedRanges.any { m.range.first in it }) return@replaceMatches null
+        editor.replaceMatches(INDIAN_CURRENCY, protectTtsSpans = true, excludedRanges = protectedRanges) { m ->
             val rawNum = m.groupValues[1].replace(",", "")
             val scale = m.groupValues[2].lowercase()
             val scaleWord = when (scale) {
@@ -88,16 +85,13 @@ object NumberReading {
             }
             listOf(spoken, scaleWord, unit).filter { it.isNotEmpty() }.joinToString(" ")
         }
-        editor.replaceMatches(SHORTHAND_LAKH, protectTtsSpans = true) { m ->
-            if (protectedRanges.any { m.range.first in it }) return@replaceMatches null
+        editor.replaceMatches(SHORTHAND_LAKH, protectTtsSpans = true, excludedRanges = protectedRanges) { m ->
             "${m.groupValues[1]} ${if (devanagari) "लाख" else "lakh"}"
         }
-        editor.replaceMatches(SHORTHAND_CRORE, protectTtsSpans = true) { m ->
-            if (protectedRanges.any { m.range.first in it }) return@replaceMatches null
+        editor.replaceMatches(SHORTHAND_CRORE, protectTtsSpans = true, excludedRanges = protectedRanges) { m ->
             "${m.groupValues[1]} ${if (devanagari) "करोड़" else "crore"}"
         }
-        editor.replaceMatches(INDIAN_COMMAS, protectTtsSpans = true) { m ->
-            if (protectedRanges.any { m.range.first in it }) return@replaceMatches null
+        editor.replaceMatches(INDIAN_COMMAS, protectTtsSpans = true, excludedRanges = protectedRanges) { m ->
             indianCommaWords(m.value, devanagari)
         }
     }
@@ -123,12 +117,9 @@ object NumberReading {
             DigitGroupingMode.PAIRS_PAUSE, DigitGroupingMode.TRIPLETS_PAUSE -> ", "
             else -> " "
         }
-        editor.replaceMatches(DIGIT_RUN, protectTtsSpans = true) { m ->
+        editor.replaceMatches(DIGIT_RUN, protectTtsSpans = true, excludedRanges = protectedRanges) { m ->
             val raw = m.value
-            if (raw.length < minLength ||
-                protectedRanges.any { m.range.first in it } ||
-                isMoney(snapshot, m.range.first, m.range.last + 1)
-            ) {
+            if (raw.length < minLength || isMoney(snapshot, m.range.first, m.range.last + 1)) {
                 return@replaceMatches null
             }
             if (groupSize == 1) {

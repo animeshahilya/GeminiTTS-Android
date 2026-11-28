@@ -56,19 +56,17 @@ object BackupRestore {
         if ("cacheEnabled" in root) prefs.cacheEnabled = root.bool("cacheEnabled", prefs.cacheEnabled)
         if ("autoDownload" in root) prefs.autoDownload = root.bool("autoDownload", prefs.autoDownload)
         if ("styleId" in root) {
-            val rawStyle = root.str("styleId", ReadingStyle.STANDARD)
-            val valid = rawStyle == ReadingStyle.CUSTOM || ReadingStyle.PRESETS.any { it.id == rawStyle }
-            prefs.styleId = if (valid) rawStyle else ReadingStyle.STANDARD
+            prefs.styleId = ReadingStyle.sanitizeId(root.str("styleId", ReadingStyle.STANDARD))
         }
 
         @Suppress("UNCHECKED_CAST")
         (root["customStyle"] as? Map<String, Any?>)?.let { cs ->
             val cur = prefs.customStyle
             prefs.customStyle = ReadingStyle.custom(
-                cs.float("speed", cur.speed).coerceIn(0.5f, 3f),
-                cs.float("pitch", cur.pitch).coerceIn(0.5f, 2f),
-                cs.int("sentencePauseMs", cur.sentencePauseMs).coerceIn(0, 1500),
-                cs.int("paragraphPauseMs", cur.paragraphPauseMs).coerceIn(0, 3000)
+                cs.float("speed", cur.speed),
+                cs.float("pitch", cur.pitch),
+                cs.int("sentencePauseMs", cur.sentencePauseMs),
+                cs.int("paragraphPauseMs", cur.paragraphPauseMs)
             )
         }
 
@@ -88,30 +86,15 @@ object BackupRestore {
         }
 
         (root["languageOverrides"] as? List<*>)?.let { arr ->
-            val map = LinkedHashMap<String, LanguageOverride>()
-            for (item in arr) {
-                @Suppress("UNCHECKED_CAST")
-                val obj = item as? Map<String, Any?> ?: continue
-                LanguageOverride.fromMap(obj)?.let { map[it.localeTag] = it }
-            }
-            prefs.languageOverrides = map
+            prefs.languageOverrides = LanguageOverride.parseMap(arr)
         }
 
         (root["appProfiles"] as? List<*>)?.let { arr ->
-            val map = LinkedHashMap<String, AppProfile>()
-            for (item in arr) {
-                @Suppress("UNCHECKED_CAST")
-                val obj = item as? Map<String, Any?> ?: continue
-                AppProfile.fromMap(obj)?.let { map[it.packageName] = it }
-            }
-            prefs.appProfiles = map
+            prefs.appProfiles = AppProfile.parseMap(arr)
         }
 
         (root["presets"] as? List<*>)?.let { arr ->
-            prefs.presets = arr.mapNotNull { item ->
-                @Suppress("UNCHECKED_CAST")
-                (item as? Map<String, Any?>)?.let(VoicePreset::fromMap)
-            }
+            prefs.presets = VoicePreset.parseList(arr)
         }
 
         var ruleCount = prefs.rules.size

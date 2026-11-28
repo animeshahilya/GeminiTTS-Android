@@ -5,31 +5,23 @@ import android.text.format.DateUtils
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -45,7 +37,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -61,7 +52,6 @@ import com.animeshahilya.geminitts.data.TextPreset
 import com.animeshahilya.geminitts.ui.RecentSpeechActivity
 import kotlinx.coroutines.delay
 import java.util.Locale
-import kotlin.math.roundToInt
 
 private const val FEEDBACK_LINK = "https://chat.whatsapp.com/HKVrT3hFRsjER9mE2Jogax"
 
@@ -103,7 +93,7 @@ private fun SettingsHub(state: UiState, onNavigate: (SettingsPage) -> Unit) {
         if (state.lockVolume) "vol locked" else null
     )
     val audioSummary = buildString {
-        append("${"%.2fx".format(Locale.ROOT, state.baseSpeed)} • ${state.volumePercent}% vol • ${state.clarityPreset.label}")
+        append("${formatFactor(state.baseSpeed)} • ${state.volumePercent}% vol • ${state.clarityPreset.label}")
         if (lockLabels.isNotEmpty()) append(" (${lockLabels.joinToString(", ")})")
     }
 
@@ -157,29 +147,13 @@ private fun AudioSettingsPage(state: UiState, viewModel: MainScreenViewModel) {
     HorizontalDivider()
     SectionTitle("Clarity & silence")
     Text("Consonant presence boost with true-peak clip protection.", style = MaterialTheme.typography.bodySmall)
-    Column(Modifier.selectableGroup()) {
-        ClarityPreset.entries.forEach { preset ->
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .defaultMinSize(minHeight = 48.dp)
-                    .selectable(
-                        selected = state.clarityPreset == preset,
-                        onClick = { viewModel.setClarity(preset) },
-                        role = Role.RadioButton
-                    )
-                    .padding(vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                RadioButton(selected = state.clarityPreset == preset, onClick = null)
-                Spacer(Modifier.width(12.dp))
-                Column {
-                    Text(preset.label)
-                    Text(preset.summary, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        }
-    }
+    RadioOptionGroup(
+        options = ClarityPreset.entries,
+        isSelected = { it == state.clarityPreset },
+        onSelect = viewModel::setClarity,
+        label = { it.label },
+        summary = { it.summary }
+    )
     SwitchRow("Loudness leveler", "Gently evens out quiet syllables in longer speech.", state.levelerEnabled, viewModel::setLeveler)
     SwitchRow("Trim leading silence", "Strips initial dead air on swipes and cached clips.", state.trimSilence, viewModel::setTrimSilence)
 
@@ -213,29 +187,13 @@ private fun TextSettingsPage(state: UiState, viewModel: MainScreenViewModel) {
         viewModel.updateTextOptions { it.copy(indianNumbering = v) }
     }
     Text("Digit grouping for long numbers", style = MaterialTheme.typography.titleSmall)
-    Column(Modifier.selectableGroup()) {
-        DigitGroupingMode.entries.forEach { mode ->
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .defaultMinSize(minHeight = 48.dp)
-                    .selectable(
-                        selected = opts.digitGrouping == mode,
-                        onClick = { viewModel.updateTextOptions { it.copy(digitGrouping = mode) } },
-                        role = Role.RadioButton
-                    )
-                    .padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                RadioButton(selected = opts.digitGrouping == mode, onClick = null)
-                Spacer(Modifier.width(12.dp))
-                Column {
-                    Text(mode.label)
-                    Text(mode.summary, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        }
-    }
+    RadioOptionGroup(
+        options = DigitGroupingMode.entries,
+        isSelected = { it == opts.digitGrouping },
+        onSelect = { mode -> viewModel.updateTextOptions { it.copy(digitGrouping = mode) } },
+        label = { it.label },
+        summary = { it.summary }
+    )
     if (opts.digitGrouping != DigitGroupingMode.OFF) {
         IntSlider(
             label = "Minimum digits",
@@ -341,14 +299,12 @@ private fun AppProfilesSettingsPage(state: UiState, viewModel: MainScreenViewMod
     configuredEntries.forEach { app ->
         val profile = state.appProfiles[app.packageName]
         val parts = if (profile != null) {
-            listOfNotNull(
+            (listOfNotNull(
                 profile.voiceId,
-                profile.styleId?.let { s -> (ReadingStyle.PRESETS + state.customStyle).firstOrNull { it.id == s }?.name ?: s },
-                if (profile.speed != 1f) "${"%.2fx".format(Locale.ROOT, profile.speed)} speed" else null,
-                if (profile.pitch != 1f) "${"%.2fx".format(Locale.ROOT, profile.pitch)} pitch" else null,
-                if (profile.volume != 1f) "${(profile.volume * 100).roundToInt()}% vol" else null,
+                profile.styleId?.let { s -> ReadingStyle.resolve(s, state.customStyle).name }
+            ) + formatOverrideFactors(profile.speed, profile.pitch, profile.volume) + listOfNotNull(
                 profile.textPreset.takeIf { it != TextPreset.INHERIT }?.label
-            ).joinToString(", ")
+            )).joinToString(", ")
         } else ""
         Row(
             Modifier.fillMaxWidth().defaultMinSize(minHeight = 52.dp).padding(vertical = 6.dp),
@@ -409,7 +365,7 @@ private fun PresetsSettingsPage(state: UiState, viewModel: MainScreenViewModel) 
             Column(Modifier.weight(1f)) {
                 Text(preset.name + if (preset.name == state.activePresetName) " (in use)" else "")
                 Text(
-                    "${preset.voiceId ?: "default"} • ${"%.2fx".format(Locale.ROOT, preset.baseSpeed)} • ${preset.volumePercent}%",
+                    "${preset.voiceId ?: "default"} • ${formatFactor(preset.baseSpeed)} • ${preset.volumePercent}%",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -588,53 +544,40 @@ private fun AppProfileDialog(
     var pitch by remember { mutableFloatStateOf(initial.pitch) }
     var volume by remember { mutableFloatStateOf(initial.volume) }
     var textPreset by remember { mutableStateOf(initial.textPreset) }
-    var voiceOpen by remember { mutableStateOf(false) }
-    var styleOpen by remember { mutableStateOf(false) }
-    var presetOpen by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(app.label, modifier = Modifier.semantics { heading() }) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box {
-                    OutlinedButton(onClick = { voiceOpen = true }, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) {
-                        Text("Voice: ${voiceId ?: "Global default"}")
-                    }
-                    DropdownMenu(expanded = voiceOpen, onDismissRequest = { voiceOpen = false }) {
-                        DropdownMenuItem(text = { Text("Global default") }, onClick = { voiceId = null; voiceOpen = false })
-                        voices.forEach { v ->
-                            DropdownMenuItem(text = { Text(describeVoice(v.id, v.gender)) }, onClick = { voiceId = v.id; voiceOpen = false })
-                        }
-                    }
-                }
-                Box {
-                    val styleName = styleId?.let { id -> (ReadingStyle.PRESETS + customStyle).firstOrNull { it.id == id }?.name ?: id } ?: "Global style"
-                    OutlinedButton(onClick = { styleOpen = true }, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) {
-                        Text("Style: $styleName")
-                    }
-                    DropdownMenu(expanded = styleOpen, onDismissRequest = { styleOpen = false }) {
-                        DropdownMenuItem(text = { Text("Global style") }, onClick = { styleId = null; styleOpen = false })
-                        (ReadingStyle.PRESETS + customStyle).forEach { s ->
-                            DropdownMenuItem(text = { Text(s.name) }, onClick = { styleId = s.id; styleOpen = false })
-                        }
-                    }
-                }
-                Box {
-                    OutlinedButton(onClick = { presetOpen = true }, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) {
-                        Text("Text rules: ${textPreset.label}")
-                    }
-                    DropdownMenu(expanded = presetOpen, onDismissRequest = { presetOpen = false }) {
-                        TextPreset.entries.forEach { p ->
-                            DropdownMenuItem(text = { Text(p.label) }, onClick = { textPreset = p; presetOpen = false })
-                        }
-                    }
-                }
-                FactorSlider("App speed", speed, 0.5f..2.5f, step = 0.05f, defaultValue = 1f) { speed = it }
-                FactorSlider("App pitch", pitch, 0.5f..2f, step = 0.05f, defaultValue = 1f) { pitch = it }
-                PercentSlider("App volume", (volume * 100).roundToInt(), 25..200, step = 5, defaultPercent = 100) {
-                    volume = it / 100f
-                }
+                DropdownSelector(
+                    label = "Voice: ${voiceId ?: "Global default"}",
+                    options = listOf<VoiceChoice?>(null) + voices,
+                    itemLabel = { it?.let { v -> describeVoice(v.id, v.gender) } ?: "Global default" },
+                    onSelect = { voiceId = it?.id }
+                )
+                val styleName = styleId?.let { id -> ReadingStyle.resolve(id, customStyle).name } ?: "Global style"
+                DropdownSelector(
+                    label = "Style: $styleName",
+                    options = listOf<ReadingStyle?>(null) + ReadingStyle.all(customStyle),
+                    itemLabel = { it?.name ?: "Global style" },
+                    onSelect = { styleId = it?.id }
+                )
+                DropdownSelector(
+                    label = "Text rules: ${textPreset.label}",
+                    options = TextPreset.entries,
+                    itemLabel = { it.label },
+                    onSelect = { textPreset = it }
+                )
+                OverrideSliders(
+                    prefix = "App",
+                    speed = speed,
+                    pitch = pitch,
+                    volume = volume,
+                    onSpeedChange = { speed = it },
+                    onPitchChange = { pitch = it },
+                    onVolumeChange = { volume = it }
+                )
             }
         },
         confirmButton = {

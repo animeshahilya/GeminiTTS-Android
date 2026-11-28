@@ -78,7 +78,7 @@ Requires JDK 17 and Android SDK platform `37.2` (the Gradle wrapper handles all 
 Release signing reads a gitignored `keystore.properties` at the repository root (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`); without it, the release APK is built unsigned with R8 minification and resource shrinking enabled.
 
 ### Test Coverage Notes
-- `./gradlew testDebugUnitTest lintDebug assembleDebug assembleRelease` currently runs **49 JVM unit tests across 7 suites** (`AudioOptimizerAndTrimTest`, `DictionaryAndBackupTest`, `DictionaryTest`, `PcmProcessorTest`, `ReadingStyleTest`, `TextPipelineAndNumberTest`, and `VoicesTest`) alongside Android Lint (`lintDebug`, `lintVitalRelease`) and full R8 release packaging.
+- `./gradlew testDebugUnitTest lintDebug assembleDebug assembleRelease` currently runs **50 JVM unit tests across 7 suites** (`AudioOptimizerAndTrimTest`, `DictionaryAndBackupTest`, `DictionaryTest`, `PcmProcessorTest`, `ReadingStyleTest`, `TextPipelineAndNumberTest`, and `VoicesTest`) alongside Android Lint (`lintDebug`, `lintVitalRelease`) and full R8 release packaging.
 - Unit tests run with `unitTests.isReturnDefaultValues = true` and `FakeSpanned` for `TtsSpan` boundary coverage; Android ART `SpannableStringBuilder`, Quick Settings tiles (`TileService`), and live on-device TalkBack synthesis require manual or instrumented testing on hardware.
 
 ## Disclaimer & License

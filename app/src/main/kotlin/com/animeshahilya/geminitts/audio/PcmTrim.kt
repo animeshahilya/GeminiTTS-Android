@@ -36,14 +36,7 @@ class LeadingSilenceTrimmer(
 
         var pos = 0
         while (pos + frameBytes <= validLen) {
-            var loud = false
-            for (ch in 0 until channels) {
-                if (abs(AudioOptimizer.getSample16(bytes, pos + ch * 2).toInt()) > threshold) {
-                    loud = true
-                    break
-                }
-            }
-            if (loud || trimmedBytes >= maxTrimBytes) {
+            if (!isQuietFrame(bytes, pos, channels, threshold) || trimmedBytes >= maxTrimBytes) {
                 released = true
                 val remaining = validLen - pos
                 val out = ByteArray(preRollLen + remaining)

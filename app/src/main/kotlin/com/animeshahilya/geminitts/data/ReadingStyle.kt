@@ -33,8 +33,24 @@ data class ReadingStyle(
         )
 
         fun custom(speed: Float, pitch: Float, sentencePauseMs: Int, paragraphPauseMs: Int) = ReadingStyle(
-            CUSTOM, "Custom", "Your own speed, pitch and pauses.", speed, pitch, sentencePauseMs, paragraphPauseMs
+            id = CUSTOM,
+            name = "Custom",
+            description = "Your own speed, pitch and pauses.",
+            speed = speed.coerceIn(0.5f, 3f),
+            pitch = pitch.coerceIn(0.5f, 2f),
+            sentencePauseMs = sentencePauseMs.coerceIn(0, 1500),
+            paragraphPauseMs = paragraphPauseMs.coerceIn(0, 3000)
         )
+
+        val DEFAULT_CUSTOM_BASE: ReadingStyle by lazy { PRESETS.first { it.id == "audiobook" } }
+
+        fun sanitizeId(id: String?): String =
+            if (id == CUSTOM || PRESETS.any { it.id == id }) id!! else STANDARD
+
+        fun all(customStyle: ReadingStyle): List<ReadingStyle> = PRESETS + customStyle
+
+        fun resolve(id: String?, customStyle: ReadingStyle): ReadingStyle =
+            if (id == CUSTOM) customStyle else PRESETS.firstOrNull { it.id == id } ?: PRESETS.first()
     }
 }
 

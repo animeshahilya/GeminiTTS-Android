@@ -44,12 +44,12 @@ class TtsPrefs(context: Context) {
     /** The values behind the Custom style; start as Audiobook's so there is something to adjust. */
     var customStyle: ReadingStyle
         get() {
-            val base = ReadingStyle.PRESETS.first { it.id == "audiobook" }
+            val base = ReadingStyle.DEFAULT_CUSTOM_BASE
             return ReadingStyle.custom(
-                prefs.getFloat(KEY_CUSTOM_SPEED, base.speed).coerceIn(0.5f, 3f),
-                prefs.getFloat(KEY_CUSTOM_PITCH, base.pitch).coerceIn(0.5f, 2f),
-                prefs.getInt(KEY_CUSTOM_SENTENCE, base.sentencePauseMs).coerceIn(0, 1500),
-                prefs.getInt(KEY_CUSTOM_PARAGRAPH, base.paragraphPauseMs).coerceIn(0, 3000)
+                prefs.getFloat(KEY_CUSTOM_SPEED, base.speed),
+                prefs.getFloat(KEY_CUSTOM_PITCH, base.pitch),
+                prefs.getInt(KEY_CUSTOM_SENTENCE, base.sentencePauseMs),
+                prefs.getInt(KEY_CUSTOM_PARAGRAPH, base.paragraphPauseMs)
             )
         }
         set(value) = prefs.edit {
@@ -60,9 +60,8 @@ class TtsPrefs(context: Context) {
         }
 
     /** The style in use, or the override for [overrideStyleId] when given. */
-    fun style(overrideStyleId: String? = null): ReadingStyle = (overrideStyleId ?: styleId).let { id ->
-        if (id == ReadingStyle.CUSTOM) customStyle else ReadingStyle.PRESETS.firstOrNull { it.id == id } ?: ReadingStyle.PRESETS.first()
-    }
+    fun style(overrideStyleId: String? = null): ReadingStyle =
+        ReadingStyle.resolve(overrideStyleId ?: styleId, customStyle)
 
     // --- Audio controls & caller locks ---
 
@@ -105,30 +104,16 @@ class TtsPrefs(context: Context) {
     // --- Text & number options ---
 
     var textOptions: TextOptions
-        get() {
-            val raw = prefs.getString(KEY_TEXT_OPTIONS, null).orEmpty()
-            parsedTextOptions?.let { (k, v) -> if (k == raw) return v }
-            val opts = if (raw.isEmpty()) TextOptions() else TextOptions.fromMap(JsonCodec.parseObject(raw))
-            return opts.also { parsedTextOptions = raw to it }
+        get() = textOptionsCache.get(prefs.getString(KEY_TEXT_OPTIONS, null).orEmpty()) { raw ->
+            if (raw.isEmpty()) TextOptions() else TextOptions.fromMap(JsonCodec.parseObject(raw))
         }
         set(value) = prefs.edit { putString(KEY_TEXT_OPTIONS, JsonCodec.stringify(value.toMap())) }
 
     // --- Per-language overrides ---
 
     var languageOverrides: Map<String, LanguageOverride>
-        get() {
-            val raw = prefs.getString(KEY_LANG_OVERRIDES, null).orEmpty()
-            parsedLangOverrides?.let { (k, v) -> if (k == raw) return v }
-            val out = LinkedHashMap<String, LanguageOverride>()
-            if (raw.isNotEmpty()) {
-                val arr = JsonCodec.parseArray(raw).orEmpty()
-                for (item in arr) {
-                    @Suppress("UNCHECKED_CAST")
-                    val map = item as? Map<String, Any?> ?: continue
-                    LanguageOverride.fromMap(map)?.let { out[it.localeTag] = it }
-                }
-            }
-            return out.also { parsedLangOverrides = raw to it }
+        get() = langOverridesCache.get(prefs.getString(KEY_LANG_OVERRIDES, null).orEmpty()) { raw ->
+            if (raw.isEmpty()) emptyMap() else LanguageOverride.parseMap(JsonCodec.parseArray(raw).orEmpty())
         }
         set(value) = prefs.edit {
             val cleaned = value.values.filterNot { it.isDefault }.map { it.toMap() }
@@ -156,19 +141,8 @@ class TtsPrefs(context: Context) {
     // --- Per-app profiles ---
 
     var appProfiles: Map<String, AppProfile>
-        get() {
-            val raw = prefs.getString(KEY_APP_PROFILES, null).orEmpty()
-            parsedAppProfiles?.let { (k, v) -> if (k == raw) return v }
-            val out = LinkedHashMap<String, AppProfile>()
-            if (raw.isNotEmpty()) {
-                val arr = JsonCodec.parseArray(raw).orEmpty()
-                for (item in arr) {
-                    @Suppress("UNCHECKED_CAST")
-                    val map = item as? Map<String, Any?> ?: continue
-                    AppProfile.fromMap(map)?.let { out[it.packageName] = it }
-                }
-            }
-            return out.also { parsedAppProfiles = raw to it }
+        get() = appProfilesCache.get(prefs.getString(KEY_APP_PROFILES, null).orEmpty()) { raw ->
+            if (raw.isEmpty()) emptyMap() else AppProfile.parseMap(JsonCodec.parseArray(raw).orEmpty())
         }
         set(value) = prefs.edit {
             val cleaned = value.values.filterNot { it.isDefault }.map { it.toMap() }
@@ -198,14 +172,8 @@ class TtsPrefs(context: Context) {
     // --- Voice presets ---
 
     var presets: List<VoicePreset>
-        get() {
-            val raw = prefs.getString(KEY_PRESETS, null).orEmpty()
-            parsedPresets?.let { (k, v) -> if (k == raw) return v }
-            val list = if (raw.isEmpty()) emptyList() else JsonCodec.parseArray(raw).orEmpty().mapNotNull { item ->
-                @Suppress("UNCHECKED_CAST")
-                (item as? Map<String, Any?>)?.let(VoicePreset::fromMap)
-            }
-            return list.also { parsedPresets = raw to it }
+        get() = presetsCache.get(prefs.getString(KEY_PRESETS, null).orEmpty()) { raw ->
+            if (raw.isEmpty()) emptyList() else VoicePreset.parseList(JsonCodec.parseArray(raw).orEmpty())
         }
         set(value) = prefs.edit {
             putString(KEY_PRESETS, if (value.isEmpty()) null else JsonCodec.stringify(value.map { it.toMap() }))
@@ -321,14 +289,13 @@ class TtsPrefs(context: Context) {
 
     /** Every language's voices from the last ML Kit listing, so the service can answer before ML Kit does. */
     var voices: List<VoiceEntry>
-        get() {
-            val raw = prefs.getString(KEY_VOICES, null).orEmpty()
-            parsedVoices?.let { (key, list) -> if (key == raw) return list }
-            return parseVoices(raw).also { parsedVoices = raw to it }
-        }
+        get() = voicesCache.get(prefs.getString(KEY_VOICES, null).orEmpty(), ::parseVoices)
         set(value) = prefs.edit {
             putString(KEY_VOICES, value.joinToString("\n") { "${it.name}|${it.locale.toLanguageTag()}|${it.gender}" })
         }
+
+    /** Voices in enabled locales, falling back to all known voices if every locale is hidden. */
+    fun enabledVoices(): List<VoiceEntry> = voices.filter { isLocaleEnabled(it.locale) }.ifEmpty { voices }
 
     /** The voice for a caller's language (ISO3 codes, as in a SynthesisRequest), respecting per-language overrides. */
     fun voiceFor(lang: String?, country: String?, preferredVoiceId: String? = null): VoiceEntry? {
@@ -362,12 +329,9 @@ class TtsPrefs(context: Context) {
         get() {
             val jsonRaw = prefs.getString(KEY_RULES_JSON, null)
             if (jsonRaw != null) {
-                parsedRuleList?.let { (k, v) -> if (k == jsonRaw) return v }
-                val list = JsonCodec.parseArray(jsonRaw).orEmpty().mapNotNull { item ->
-                    @Suppress("UNCHECKED_CAST")
-                    (item as? Map<String, Any?>)?.let(DictionaryRule::fromMap)
+                return rulesCache.get(jsonRaw) { raw ->
+                    JsonCodec.parseArray(raw).orEmpty().mapObjects(DictionaryRule::fromMap)
                 }
-                return list.also { parsedRuleList = jsonRaw to it }
             }
             val legacyRaw = prefs.getString(KEY_RULES, null).orEmpty()
             return parseLegacyRules(legacyRaw)
@@ -384,8 +348,7 @@ class TtsPrefs(context: Context) {
     val dictionary: Dictionary
         get() {
             val raw = prefs.getString(KEY_RULES_JSON, null) ?: prefs.getString(KEY_RULES, null).orEmpty()
-            compiled?.let { (key, dict) -> if (key == raw) return dict }
-            return Dictionary(rules).also { compiled = raw to it }
+            return compiledCache.get(raw) { Dictionary(rules) }
         }
 
     private fun parseVoices(raw: String): List<VoiceEntry> = raw.lines().mapNotNull { line ->
@@ -435,13 +398,22 @@ class TtsPrefs(context: Context) {
         const val SLEEP_MAX_MINUTES = 60
         const val SLEEP_HOLD_MS = 6 * 60 * 60_000L
 
-        @Volatile private var compiled: Pair<String, Dictionary>? = null
-        @Volatile private var parsedVoices: Pair<String, List<VoiceEntry>>? = null
-        @Volatile private var parsedRuleList: Pair<String, List<DictionaryRule>>? = null
-        @Volatile private var parsedTextOptions: Pair<String, TextOptions>? = null
-        @Volatile private var parsedLangOverrides: Pair<String, Map<String, LanguageOverride>>? = null
-        @Volatile private var parsedAppProfiles: Pair<String, Map<String, AppProfile>>? = null
-        @Volatile private var parsedPresets: Pair<String, List<VoicePreset>>? = null
+        private class CachedPref<T> {
+            @Volatile private var entry: Pair<String, T>? = null
+
+            inline fun get(raw: String, parse: (String) -> T): T {
+                entry?.let { (k, v) -> if (k == raw) return v }
+                return parse(raw).also { entry = raw to it }
+            }
+        }
+
+        private val compiledCache = CachedPref<Dictionary>()
+        private val voicesCache = CachedPref<List<VoiceEntry>>()
+        private val rulesCache = CachedPref<List<DictionaryRule>>()
+        private val textOptionsCache = CachedPref<TextOptions>()
+        private val langOverridesCache = CachedPref<Map<String, LanguageOverride>>()
+        private val appProfilesCache = CachedPref<Map<String, AppProfile>>()
+        private val presetsCache = CachedPref<List<VoicePreset>>()
         @Volatile private var parsedSeenApps: Set<String>? = null
     }
 }
