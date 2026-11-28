@@ -396,7 +396,8 @@ class TtsPrefs(context: Context) {
         private const val SEP = "=>"
         private const val MAX_SEEN_APPS = 40
         const val SLEEP_MAX_MINUTES = 60
-        const val SLEEP_HOLD_MS = 6 * 60 * 60_000L
+        /** Long enough to stop a reader that keeps going; after that the timer is over and apps speak again. */
+        const val SLEEP_HOLD_MS = 10 * 60_000L
 
         private class CachedPref<T> {
             @Volatile private var entry: Pair<String, T>? = null

@@ -558,7 +558,7 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
                 val content = generate()
-                app.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(content) }
+                app.contentResolver.openOutputStream(uri, "wt")?.bufferedWriter()?.use { it.write(content) }
                     ?: error("Could not open file for writing.")
             }.onSuccess {
                 _state.update { it.copy(statusMessage = successMessage) }
@@ -572,8 +572,19 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
         writeTextToUri(uri, "Settings and dictionary exported.") { BackupRestore.exportBackupJson(prefs) }
 
     private fun readBoundedText(uri: Uri, maxChars: Int = BackupRestore.MAX_IMPORT_CHARS): String {
-        val stream = app.contentResolver.openInputStream(uri) ?: error("Could not read selected file.")
-        return stream.bufferedReader().use { reader ->
+        val stream = app.contentResolver.openInputStream(uri)?.buffered() ?: error("Could not read selected file.")
+        // Windows Notepad may save as UTF-16; its byte-order mark says which kind.
+        stream.mark(2)
+        val b0 = stream.read()
+        val b1 = stream.read()
+        stream.reset()
+        val charset = when {
+            b0 == 0xFF && b1 == 0xFE -> Charsets.UTF_16LE
+            b0 == 0xFE && b1 == 0xFF -> Charsets.UTF_16BE
+            else -> Charsets.UTF_8
+        }
+        if (charset != Charsets.UTF_8) stream.skip(2)
+        return stream.bufferedReader(charset).use { reader ->
             val sb = StringBuilder()
             val buf = CharArray(8192)
             while (true) {

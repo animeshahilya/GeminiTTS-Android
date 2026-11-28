@@ -205,7 +205,10 @@ class GenAiTtsService : TextToSpeechService() {
             (langOverride?.volume ?: 1f) * (appProfile?.volume ?: 1f)).coerceIn(0f, 2f)
 
         val textOpts = prefs.textOptions.applyAppPreset(appProfile?.textPreset ?: TextPreset.INHERIT)
-        val text = TextPipeline.process(rawText, textOpts, prefs.dictionary, language.toLanguageTag())
+        // A bug in text cleanup must never silence the screen reader: read the original text instead.
+        val text = runCatching { TextPipeline.process(rawText, textOpts, prefs.dictionary, language.toLanguageTag()) }
+            .onFailure { Log.e(TAG, "Text cleanup failed, reading the text as sent", it) }
+            .getOrDefault(rawText)
         if (text.isBlank()) {
             if (!cancelled()) PcmProcessor(callback, cancelled).finish()
             return
@@ -242,7 +245,9 @@ class GenAiTtsService : TextToSpeechService() {
             trimLeadingSilence = prefs.trimSilence && cachedClip == null,
             isSingleChar = isSingleChar
         )
-        val pieces = if (cachedClip == null) splitForPauses(text, style) else emptyList()
+        val pieces = if (cachedClip == null) {
+            runCatching { splitForPauses(text, style) }.getOrElse { listOf(text to 0) }
+        } else emptyList()
 
         val prevPriority = Process.getThreadPriority(Process.myTid())
         runCatching { Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO) }
